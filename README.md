@@ -15,7 +15,7 @@ This repo follows the installable layout used by `mattpocock/skills`: promoted s
 - 支持 `SKILL.md` / Agent Skills 标准的工具。
 - 支持 `npx skills@latest add owner/repo` 安装的工具。
 - 能读取本地 Markdown 指令并执行 shell/Git 命令的 coding agent。
-- Claude Code，可通过 `.claude-plugin/` 作为 plugin 安装。
+- Claude Code，可通过 `~/.claude/skills` 显示在 Skills 面板，也可通过 `.claude-plugin/` 作为 plugin 安装。
 - Codex，可通过 `~/.codex/skills` 安装。
 
 不同 Agent 对 slash command、插件 marketplace、自动发现路径的支持不一样，所以 `/git-auto-commit` 这类命令需要由对应客户端或插件系统映射。技能本体的通用入口是 `SKILL.md`，不是某个特定客户端的私有命令格式。
@@ -38,7 +38,27 @@ npx skills@latest add tasselx/skills
 npx skills@latest add tasselx/skills --skill git-auto-commit --agent '*'
 ```
 
+注意：`skills@latest` 当前会把通用 skill 安装到 `~/.agents/skills` 等 Agent Skills 目录；Claude Code 的 Skills 面板提示它扫描的是 `.claude/skills/` 或 `~/.claude/skills/`。如果你要让 Claude Code 的 Skills 面板显示这个技能，请看下面的 Claude Code Skills 安装。
+
 如果你 fork 了仓库，把 `tasselx/skills` 替换成你的 `owner/repo`。
+
+## Claude Code Skills 面板安装
+
+让 Claude Code 的 Skills 面板显示 `git-auto-commit`：
+
+```bash
+mkdir -p ~/.claude/skills
+cp -R skills/engineering/git-auto-commit ~/.claude/skills/
+```
+
+然后重启 Claude Code，或重新打开 Skills 面板。
+
+如果你在当前项目里只想项目级启用，也可以安装到项目目录：
+
+```bash
+mkdir -p .claude/skills
+cp -R skills/engineering/git-auto-commit .claude/skills/
+```
 
 ## Claude Code Plugin 安装
 
@@ -83,6 +103,7 @@ cp -R skills/engineering/git-auto-commit ~/.claude/skills/
 
 ```text
 ~/.codex/skills/git-auto-commit
+~/.claude/skills/git-auto-commit
 ```
 
 ## 使用方式
