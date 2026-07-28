@@ -11,6 +11,7 @@ Rules:
 - Stop and ask before committing when secret-like files, huge diffs, unclear intent, destructive changes, public API breaks, migrations, or unrelated mixed changes are present.
 - Never push unless the user explicitly asks for push.
 - For dry-run requests, do not stage or commit; only return the proposed message and reasoning.
+- Do not add `Co-Authored-By`, `Generated-By`, or other AI attribution trailers unless the user explicitly asks for them.
 
 Default commit format:
 `type(scope): 中文描述 English Keyword`

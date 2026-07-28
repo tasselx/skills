@@ -170,4 +170,6 @@ User-invoked:
 
 这个技能只创建本地 commit。遇到疑似密钥文件、大 diff、意图不清晰、破坏性改动、公共 API 变更、迁移、或混杂的无关改动时，会先停下来请求确认。除非用户明确要求 push，否则永远不会自动 push。
 
+默认不会添加 `Co-Authored-By: Claude <noreply@anthropic.com>` 或其他 AI attribution trailer，除非用户明确要求。
+
 The skill creates local commits only. It stops for confirmation when it detects secret-like paths, huge diffs, unclear intent, destructive changes, public API breaks, migrations, or mixed unrelated changes. It never pushes unless the user explicitly asks for push.

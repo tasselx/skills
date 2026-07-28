@@ -72,12 +72,19 @@ refactor(network): 重构请求层结构 Network Layer Refactor
 
 Use a body only for complex behavior, migrations, breaking changes, or multi-module changes. Keep simple commits to a single subject line.
 
+Do not add AI attribution trailers such as:
+
+```text
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
 ## Execution Rules
 
 - Analyze real diffs; never infer the message from filenames alone.
 - Respect existing repository commit language, length, emoji usage, and scopes.
 - Keep unrelated working-tree changes untouched.
 - Prefer staging explicit paths over `git add .` when unrelated changes are present.
+- Do not add `Co-Authored-By` or other AI attribution trailers unless the user explicitly asks for them.
 - Do not create tests, summaries, or formatting changes unless the user explicitly asked for them.
 - Do not amend, reset, rebase, or discard work unless the user explicitly asked for that exact operation.
 
