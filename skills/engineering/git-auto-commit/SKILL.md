@@ -1,0 +1,86 @@
+---
+name: git-auto-commit
+description: Analyze real Git working-tree changes, learn the repository's commit style, generate concise bilingual Chinese-English commit messages, and create safe local commits. Use when the user asks an agent to commit, auto commit, save changes to git, create a commit, generate a commit message, run a dry commit review, or explicitly invokes git-auto-commit.
+---
+
+# Git Auto Commit
+
+Create a local Git commit only after inspecting the actual diff, repository history, and safety risks. Prefer the repository's existing commit style; when it is unclear, use concise bilingual Chinese-English conventional commits.
+
+This skill is agent-neutral. Use it from Codex, Claude Code, Cursor, OpenCode, Gemini CLI, or any other coding agent that can read this `SKILL.md` file and run local shell commands.
+
+## Quick Workflow
+
+1. Verify the current directory is a Git repository.
+2. Locate the skill directory. If this file is loaded from disk, use its parent directory as `SKILL_DIR`; otherwise ask the user for the installed `git-auto-commit` skill path.
+3. Run the read-only snapshot helper:
+
+```bash
+export SKILL_DIR="/path/to/git-auto-commit"
+python3 "$SKILL_DIR/scripts/git_commit_snapshot.py"
+```
+
+4. Inspect the files that matter:
+   - `git status --short`
+   - `git diff --stat`
+   - `git diff`
+   - `git diff --cached` when staged changes exist
+   - `git log --oneline -20`
+5. Determine whether the change is one coherent commit.
+6. Choose the commit type and scope from repository history and changed paths.
+7. Stage only the intended files.
+8. Commit locally with the selected message.
+9. Report the commit hash, message, and any files intentionally left uncommitted.
+
+Never push unless the user explicitly asks for push.
+
+## Modes
+
+- Normal: analyze, stage intended files, and create one local commit.
+- Dry run: when the user says dry, dry-run, preview, only message, or only generate, do not stage or commit; return the recommended message and reasoning.
+- Push: only push after a successful commit when the user explicitly asks for push.
+
+## Safety Rules
+
+Stop and ask before committing when any of these are true:
+
+- Secret-like files or names are present: `.env`, `.key`, `.pem`, credentials, token, password, api_key, secret.
+- The intent is unclear or multiple unrelated changes are mixed together.
+- The diff is large, roughly more than 50 files or 1000 changed lines.
+- The change appears destructive, such as broad deletion, migration, public API break, schema change, or major dependency upgrade.
+- The user has unstaged and staged changes that appear to represent different intents.
+
+Ignore dependency folders, generated build output, caches, and binary artifacts unless the repository clearly tracks them intentionally.
+
+## Message Rules
+
+Read `$SKILL_DIR/references/commit-style.md` when the repository has no obvious style or when choosing the type/scope is non-trivial.
+
+Default format:
+
+```text
+type(scope): 中文描述 English Keyword
+```
+
+Examples:
+
+```text
+feat(auth): 增加 OAuth 登录支持 OAuth Login Support
+fix(player): 修复视频加载失败 Video Playback Fix
+refactor(network): 重构请求层结构 Network Layer Refactor
+```
+
+Use a body only for complex behavior, migrations, breaking changes, or multi-module changes. Keep simple commits to a single subject line.
+
+## Execution Rules
+
+- Analyze real diffs; never infer the message from filenames alone.
+- Respect existing repository commit language, length, emoji usage, and scopes.
+- Keep unrelated working-tree changes untouched.
+- Prefer staging explicit paths over `git add .` when unrelated changes are present.
+- Do not create tests, summaries, or formatting changes unless the user explicitly asked for them.
+- Do not amend, reset, rebase, or discard work unless the user explicitly asked for that exact operation.
+
+## Slash Command Prompt
+
+For agents that support slash commands, create `/git-auto-commit` with the prompt in `commands/git-auto-commit.md`. The slash command should invoke this skill, then follow the same safety rules and execution workflow.

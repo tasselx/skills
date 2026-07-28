@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Auto Commit"
+  short_description: "Analyze changes and create safe bilingual commits"
+  default_prompt: "Use $git-auto-commit to analyze the current repository changes and create a safe bilingual commit."

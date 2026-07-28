@@ -1,0 +1,21 @@
+{
+  "name": "tasselx",
+  "owner": {
+    "name": "tasselx"
+  },
+  "description": "Installable agent skills for safe Git auto-commit workflows.",
+  "plugins": [
+    {
+      "name": "git-auto-commit-skills",
+      "source": "./",
+      "description": "Safe local Git auto-commit skills with bilingual Chinese-English commit messages.",
+      "category": "engineering",
+      "keywords": [
+        "git",
+        "skills",
+        "commit",
+        "auto-commit"
+      ]
+    }
+  ]
+}

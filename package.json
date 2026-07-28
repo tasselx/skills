@@ -1,0 +1,11 @@
+{
+  "name": "git-auto-commit-skills",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent skills for safe local Git auto-commit workflows.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tasselx/skills"
+  },
+  "license": "MIT"
+}
