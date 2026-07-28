@@ -8,9 +8,9 @@ This is an installable collection of agent-neutral skills for coding agents. Mor
 
 `git-auto-commit` analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits.
 
-本仓库参考 [mattpocock/skills](https://github.com/mattpocock/skills) 的可安装结构：正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
+本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
-This repo follows the installable layout used by `mattpocock/skills`: promoted skills live under `skills/`, Claude Code plugin metadata lives under `.claude-plugin/`, and the repo can be consumed by Agent Skills installers.
+This repo follows the layout: promoted skills live under `skills/`, Claude Code plugin metadata lives under `.claude-plugin/`, and the repo can be consumed by Agent Skills installers.
 
 ## 兼容性说明
 
