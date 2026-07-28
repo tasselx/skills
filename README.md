@@ -1,8 +1,12 @@
-# Git Auto Commit Skills
+# Tassel Agent Skills
 
-面向 Coding Agent 的自动 Git 提交技能包。核心技能 `git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成简洁的中英双语 commit message，并在安全检查通过后创建本地提交。
+面向 Coding Agent 的可安装 skills 集合。这个仓库后续可能会继续增加更多 skills；当前已发布的第一个技能是 `git-auto-commit`。
 
-This is an agent-neutral Git commit skill package. The main `git-auto-commit` skill analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits.
+This is an installable collection of agent-neutral skills for coding agents. More skills may be added over time; the first published skill is `git-auto-commit`.
+
+`git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成简洁的中英双语 commit message，并在安全检查通过后创建本地提交。
+
+`git-auto-commit` analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits.
 
 本仓库参考 [mattpocock/skills](https://github.com/mattpocock/skills) 的可安装结构：正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
@@ -30,9 +34,9 @@ This skill is not guaranteed to support every proprietary agent plugin system on
 npx skills@latest add tasselx/skills
 ```
 
-安装时选择 `git-auto-commit`，以及你想安装到的 agent。
+安装时选择你需要的 skill，以及你想安装到的 agent。当前仓库只有一个 skill：`git-auto-commit`。
 
-安装指定技能和所有支持的 agent：
+只安装当前的 `git-auto-commit`，并安装到所有支持的 agent：
 
 ```bash
 npx skills@latest add tasselx/skills --skill git-auto-commit --agent '*'
@@ -138,6 +142,8 @@ Use the git-auto-commit skill to commit and then push.
 
 ## 技能列表
 
+当前仓库只有一个 skill。后续新增 skill 时，会继续按分类放在 `skills/<category>/<skill-name>/` 下，并在这里列出。
+
 ### Engineering
 
 User-invoked:
@@ -164,6 +170,16 @@ User-invoked:
 ├── CLAUDE.md
 ├── package.json
 └── README.md
+```
+
+后续新增 skill 时，推荐继续放在合适的分类目录中，例如：
+
+```text
+skills/
+├── engineering/
+│   └── another-engineering-skill/
+└── productivity/
+    └── another-productivity-skill/
 ```
 
 ## 安全行为
