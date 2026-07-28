@@ -1,4 +1,16 @@
 interface:
   display_name: "Git Auto Commit"
   short_description: "Analyze changes and create safe bilingual commits"
+  long_description: "Reads real Git diffs, learns the repository's commit style, generates concise bilingual Chinese-English commit messages, and creates safe local commits. Detects secret-like files, merge conflicts, and large diffs before committing."
   default_prompt: "Use $git-auto-commit to analyze the current repository changes and create a safe bilingual commit."
+  capabilities:
+    - git-diff-analysis
+    - commit-style-learning
+    - bilingual-commit-generation
+    - secret-detection
+    - conflict-detection
+    - safe-local-commit
+  modes:
+    - normal
+    - dry-run
+    - push

@@ -55,3 +55,33 @@ Add a body when the commit includes:
 - Important behavior that is not obvious from the subject.
 
 Use short bullets in the body; do not narrate routine file lists.
+
+## Body Examples
+
+Simple change (subject only, no body):
+
+```text
+fix(auth): 修复 Token 过期问题 Token Expiration Fix
+```
+
+Breaking change with body:
+
+```text
+feat(api)!: 重构用户认证接口 Refactor Auth API
+
+BREAKING CHANGE: 移除 /v1/auth/legacy 端点，统一使用 /v2/auth/oauth
+- 移除 LegacyAuthProvider 类
+- 新增 OAuthProvider 作为默认认证方式
+- 迁移指南见 docs/migration/auth-v2.md
+```
+
+Multi-module change with body:
+
+```text
+feat(payment): 增加订阅支付流程 Subscription Payment Flow
+
+- 新增 SubscriptionPlan 模型与数据库迁移
+- 接入 Stripe 支付网关
+- 添加订阅状态 webhook 处理
+- 前端订阅管理页面待后续实现
+```

@@ -4,9 +4,9 @@
 
 This is an installable collection of agent-neutral skills for coding agents. More skills may be added over time; the first published skill is `git-auto-commit`.
 
-`git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成简洁的中英双语 commit message，并在安全检查通过后创建本地提交。
+`git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成简洁的中英双语 commit message，并在安全检查通过后创建本地提交。内置密钥文件检测、合并冲突检测、生成物路径识别，以及 staged/unstaged 分阶段统计。
 
-`git-auto-commit` analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits.
+`git-auto-commit` analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
 
 本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
@@ -157,6 +157,7 @@ User-invoked:
 ├── .claude-plugin/
 │   ├── marketplace.json
 │   └── plugin.json
+├── .gitignore
 ├── skills/
 │   └── engineering/
 │       ├── README.md
@@ -165,7 +166,9 @@ User-invoked:
 │           ├── agents/openai.yaml
 │           ├── commands/git-auto-commit.md
 │           ├── references/commit-style.md
-│           └── scripts/git_commit_snapshot.py
+│           └── scripts/
+│               ├── git_commit_snapshot.py
+│               └── test_git_commit_snapshot.py
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── package.json
@@ -184,8 +187,8 @@ skills/
 
 ## 安全行为
 
-这个技能只创建本地 commit。遇到疑似密钥文件、大 diff、意图不清晰、破坏性改动、公共 API 变更、迁移、或混杂的无关改动时，会先停下来请求确认。除非用户明确要求 push，否则永远不会自动 push。
+这个技能只创建本地 commit。遇到疑似密钥文件、未解决的合并冲突、大 diff、意图不清晰、破坏性改动、公共 API 变更、迁移、或混杂的无关改动时，会先停下来请求确认。快照脚本会自动检测密钥类路径、冲突状态、生成物/缓存目录，并分别统计 staged 和 unstaged 改动行数。除非用户明确要求 push，否则永远不会自动 push。
 
 默认不会添加 `Co-Authored-By: Claude <noreply@anthropic.com>` 或其他 AI attribution trailer，除非用户明确要求。
 
-The skill creates local commits only. It stops for confirmation when it detects secret-like paths, huge diffs, unclear intent, destructive changes, public API breaks, migrations, or mixed unrelated changes. It never pushes unless the user explicitly asks for push.
+The skill creates local commits only. It stops for confirmation when it detects secret-like paths, unresolved merge conflicts, huge diffs, unclear intent, destructive changes, public API breaks, migrations, or mixed unrelated changes. The snapshot script automatically detects secret-like paths, conflict status, generated/cache directories, and reports separate staged/unstaged line counts. It never pushes unless the user explicitly asks for push.

@@ -20,6 +20,8 @@ export SKILL_DIR="/path/to/git-auto-commit"
 python3 "$SKILL_DIR/scripts/git_commit_snapshot.py"
 ```
 
+The snapshot JSON includes `has_conflicts`, `conflicted_paths`, `merge_in_progress`, `rebase_in_progress`, and separate `staged_*` / `unstaged_*` line counts. If `has_conflicts` is `true`, skip to [Merge Conflicts](#merge-conflicts) below.
+
 4. Inspect the files that matter:
    - `git status --short`
    - `git diff --stat`
@@ -44,7 +46,8 @@ Never push unless the user explicitly asks for push.
 
 Stop and ask before committing when any of these are true:
 
-- Secret-like files or names are present: `.env`, `.key`, `.pem`, credentials, token, password, api_key, secret.
+- Secret-like files or names are present: `.env`, `.envrc`, `.key`, `.pem`, `.p12`, `.pfx`, `.keystore`, `.jks`, `.kdbx`, `.ovpn`, `.netrc`, `.htpasswd`, `.htaccess`, `.npmrc`, `.pypirc`, credentials, token, password, api_key, secret, private_key, SSH private keys (`id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`).
+- Unresolved merge conflicts are present (snapshot `has_conflicts` is `true`).
 - The intent is unclear or multiple unrelated changes are mixed together.
 - The diff is large, roughly more than 50 files or 1000 changed lines.
 - The change appears destructive, such as broad deletion, migration, public API break, schema change, or major dependency upgrade.
@@ -87,6 +90,27 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - Do not add `Co-Authored-By` or other AI attribution trailers unless the user explicitly asks for them.
 - Do not create tests, summaries, or formatting changes unless the user explicitly asked for them.
 - Do not amend, reset, rebase, or discard work unless the user explicitly asked for that exact operation.
+
+## Merge Conflicts
+
+When the working tree or index contains unresolved merge conflicts, **do not attempt to resolve them automatically**.
+
+The snapshot helper already reports `has_conflicts`, `conflicted_paths`, `merge_in_progress`, and `rebase_in_progress`. Check these fields first; the commands below are for manual verification.
+
+Detection:
+
+- Run `git status` and look for `Unmerged paths` or status codes `DD`, `AU`, `UD`, `UA`, `DU`, `AA`, `UU`.
+- Run `git diff --name-only --diff-filter=U` to list conflicted files.
+- Check for in-progress merge or rebase: `test -f .git/MERGE_HEAD` or `test -d .git/rebase-merge`.
+
+Action:
+
+1. Report the list of conflicted files to the user.
+2. Ask the user to resolve conflicts manually (edit, `git add`, or `git rm <file>`).
+3. Do not stage, commit, or push until all conflicts are resolved and the user confirms.
+4. If a merge or rebase is in progress, inform the user and ask whether to continue, abort, or pause.
+
+Never run `git commit` while conflicted files remain, even if the user asks to "just commit everything". Explain the conflict situation and wait for explicit resolution.
 
 ## Slash Command Prompt
 
