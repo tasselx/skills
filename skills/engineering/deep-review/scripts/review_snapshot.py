@@ -139,6 +139,8 @@ INSTANT_FILE_BYTE_CAP = 48_000
 INSTANT_TOTAL_EMBED_CAP = 160_000
 STANDARD_MAX_FILES = 20
 STANDARD_MAX_LINES = 800
+# Default run mode: prefer oneshot unless user/env forces deep.
+DEFAULT_FORCE_PROFILE = (os.environ.get("DEEP_REVIEW_PROFILE") or "").strip().lower()
 
 
 def normalize_git_output(text: str) -> str:
@@ -1055,9 +1057,26 @@ def classify_review_profile(
     has_migration: bool,
     package_count: int,
     change_types: list[str],
+    force_profile: str = "",
 ) -> str:
-    """Return instant | standard | deep."""
-    if large_diff or security_paths or has_migration or package_count > 1:
+    """Return instant | standard | deep.
+
+    Default bias: oneshot ``instant`` for anything that is not an everyday-large
+    or security-sensitive change. ``standard`` is kept only as a soft label for
+    slightly larger diffs but still uses a zero extra-tool budget unless deep.
+    """
+    force = (force_profile or DEFAULT_FORCE_PROFILE or "").strip().lower()
+    if force in {"deep", "full", "thorough"}:
+        return "deep"
+    if force in {"instant", "fast", "oneshot"}:
+        return "instant"
+    if force in {"standard", "normal"}:
+        return "standard"
+
+    # Auto: only truly heavy/sensitive changes leave the oneshot path.
+    if large_diff or package_count > 1:
+        return "deep"
+    if security_paths or has_migration:
         return "deep"
     risky_types = {
         "security_change",
@@ -1066,13 +1085,14 @@ def classify_review_profile(
     }
     if any(t in risky_types for t in change_types):
         return "deep"
-    if reviewable_count <= INSTANT_MAX_FILES and total_lines <= INSTANT_MAX_LINES:
-        return "instant"
+
+    # Expanded oneshot band (was: tiny=instant, medium=standard with 1 more batch).
+    # Agents ignore "1 more batch" and wander for minutes; keep them at 0 tools.
     if (
         reviewable_count <= STANDARD_MAX_FILES
         and total_lines <= STANDARD_MAX_LINES
     ):
-        return "standard"
+        return "instant"
     return "deep"
 
 
@@ -1083,6 +1103,7 @@ def finalize(
     detached: bool,
     *,
     include_risk_matrix: bool = False,
+    force_profile: str = "",
 ) -> dict[str, object]:
     paths = [str(p) for p in core.get("paths", [])]  # type: ignore[arg-type]
     entries = list(core.get("entries", []))  # type: ignore[arg-type]
@@ -1169,13 +1190,15 @@ def finalize(
         has_migration=has_migration,
         package_count=len(packages),
         change_types=change_types,
+        force_profile=force_profile,
     )
 
+    # Embed aggressively so agents never need Read tools on default path.
     embed_candidates: list[str] = []
-    if profile == "instant":
+    if profile in {"instant", "standard"}:
         embed_candidates = [str(f["path"]) for f in reviewable if f.get("path")]
-    elif profile == "standard":
-        embed_candidates = list(full_file_read_paths)
+    elif profile == "deep":
+        embed_candidates = list(full_file_read_paths)[:12]
 
     file_contents: dict[str, object] = {
         "files": {},
@@ -1190,7 +1213,7 @@ def finalize(
         full_file_read_paths = [
             p for p in full_file_read_paths if p not in embedded_set
         ]
-        if profile == "instant":
+        if profile in {"instant", "standard"}:
             if file_contents.get("complete"):
                 full_file_read_paths = []
             patch_likely_enough = [
@@ -1199,13 +1222,16 @@ def finalize(
                 if f.get("path") and str(f["path"]) not in embedded_set
             ]
 
-    if profile == "instant":
+    # Instant AND standard: zero extra tools (standard label only for size band).
+    if profile in {"instant", "standard"}:
         agent_hints = {
-            "review_profile": "instant",
+            "review_profile": profile,
             "max_tool_batches_after_snapshot": 0,
+            "tool_calls_remaining": 0,
             "forbid_extra_reads": True,
             "forbid_grep": True,
             "forbid_tests": True,
+            "forbid_task_subagent": True,
             "emit_mode": "oneshot",
             "skip_git_status_repeat": True,
             "prefer_embedded_diff": True,
@@ -1214,38 +1240,20 @@ def finalize(
             "do_not_reload_skill_md": True,
             "do_not_load_review_depth": True,
             "speed_contract": (
-                "After this snapshot JSON, write the full review immediately "
-                "with ZERO additional tool calls. Use diff_patch + file_contents "
-                "+ stack_excerpts only."
-            ),
-        }
-    elif profile == "standard":
-        agent_hints = {
-            "review_profile": "standard",
-            "max_tool_batches_after_snapshot": 1,
-            "forbid_extra_reads": False,
-            "forbid_grep": False,
-            "forbid_tests": True,
-            "emit_mode": "oneshot",
-            "skip_git_status_repeat": True,
-            "prefer_embedded_diff": True,
-            "prefer_stack_excerpts": True,
-            "use_file_contents": True,
-            "parallel_file_reads": True,
-            "do_not_reload_skill_md": True,
-            "do_not_load_review_depth": True,
-            "speed_contract": (
-                "At most ONE tool batch after snapshot (parallel reads only if "
-                "full_file_read_paths non-empty). Then oneshot full report."
+                "STOP. tool_calls_remaining=0. Write the FULL review NOW from "
+                "diff_patch + file_contents + stack_excerpts. Calling Read/Grep/"
+                "Glob/Task/Bash again is a protocol violation."
             ),
         }
     else:
         agent_hints = {
             "review_profile": "deep",
             "max_tool_batches_after_snapshot": 3,
+            "tool_calls_remaining": 3,
             "forbid_extra_reads": False,
             "forbid_grep": False,
             "forbid_tests": False,
+            "forbid_task_subagent": True,
             "emit_mode": "stream",
             "skip_git_status_repeat": True,
             "prefer_embedded_diff": True,
@@ -1254,7 +1262,8 @@ def finalize(
             "do_not_reload_skill_md": True,
             "do_not_load_review_depth": False,
             "speed_contract": (
-                "Stream findings as confirmed. Cap extra tool batches at 3."
+                "Deep profile: at most 3 tool batches after snapshot. "
+                "No Task/explore subagent. Stream findings; then Summary."
             ),
         }
 
@@ -1264,6 +1273,13 @@ def finalize(
         "branch": branch,
         "detached_head": detached,
         "review_profile": profile,
+        "tool_calls_remaining": int(agent_hints.get("tool_calls_remaining") or 0),
+        "AGENT_INSTRUCTION": (
+            "TOOL BUDGET EXHAUSTED — write the complete code review now. "
+            "Do not call Read, Grep, Glob, Task, or Bash again."
+            if profile in {"instant", "standard"}
+            else "Deep review: ≤3 more tool batches, then write findings + summary."
+        ),
         "large_diff": large_diff,
         "large_diff_thresholds": {
             "files": LARGE_FILE_THRESHOLD,
@@ -1407,6 +1423,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skill root for resolving references/tech-stacks.md",
     )
     p.add_argument(
+        "--profile",
+        choices=["auto", "instant", "standard", "deep"],
+        default="auto",
+        help="Force review profile (default: auto). Prefer instant for speed.",
+    )
+    p.add_argument(
         "--risk-matrix",
         action="store_true",
         help="Include full risk_matrix JSON (omit by default; weights live in SKILL.md)",
@@ -1479,17 +1501,29 @@ def main(argv: list[str] | None = None) -> int:
             byte_cap=max(10_000, int(args.diff_byte_cap)),
         )
 
+    force_profile = "" if args.profile == "auto" else args.profile
+
     # finalize first to know stacks, then excerpts
     if core.get("ok") is False:
         snap = finalize(
-            core, root, branch, detached, include_risk_matrix=args.risk_matrix
+            core,
+            root,
+            branch,
+            detached,
+            include_risk_matrix=args.risk_matrix,
+            force_profile=force_profile,
         )
         indent = None if args.compact else 2
-        print(json.dumps(snap, ensure_ascii=False, indent=indent))
+        _emit_snapshot(snap, indent=indent)
         return 1
 
     snap = finalize(
-        core, root, branch, detached, include_risk_matrix=args.risk_matrix
+        core,
+        root,
+        branch,
+        detached,
+        include_risk_matrix=args.risk_matrix,
+        force_profile=force_profile,
     )
 
     if want_stacks and snap.get("must_read_tech_stack_sections"):
@@ -1499,7 +1533,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         snap["stack_excerpts"] = excerpts
         if excerpts.get("sections"):
-            # Agent can skip opening tech-stacks.md when excerpts are complete
             missing = excerpts.get("missing") or []
             snap["stack_excerpts_complete"] = not missing
         else:
@@ -1511,8 +1544,23 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     indent = None if args.compact else 2
-    print(json.dumps(snap, ensure_ascii=False, indent=indent))
+    _emit_snapshot(snap, indent=indent)
     return 0
+
+
+def _emit_snapshot(snap: dict[str, object], *, indent: int | None) -> None:
+    """Print JSON to stdout; scream tool-budget on stderr for logs/humans."""
+    profile = snap.get("review_profile")
+    remaining = snap.get("tool_calls_remaining", "?")
+    lang = snap.get("output_language", "?")
+    print(
+        f"[deep-review] profile={profile} tool_calls_remaining={remaining} "
+        f"lang={lang} → WRITE REVIEW NOW (no more tools)"
+        if profile in {"instant", "standard"}
+        else f"[deep-review] profile={profile} tool_calls_remaining={remaining} lang={lang}",
+        file=sys.stderr,
+    )
+    print(json.dumps(snap, ensure_ascii=False, indent=indent))
 
 
 if __name__ == "__main__":

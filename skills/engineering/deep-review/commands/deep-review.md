@@ -1,26 +1,38 @@
-Use the `deep-review` skill. `SKILL.md` is source of truth.
+# /deep-review — HARD ENTRY
 
-Task: production-level **read-only** review of current changes; actionable findings only.
+**Tool budget = 1.** Then write the full review. No exploration.
 
-## Steps (keep short)
+## Exactly one command
 
-1. `SKILL_DIR` = installed `deep-review` directory.
-2. **One** snapshot (prefer compact):
-   ```bash
-   python3 "$SKILL_DIR/scripts/review_snapshot.py" --compact
-   ```
-   Modes: `--mode staged` | `commit --commit <sha>` | `branch-diff --base <ref>` | `file --file <path>`
-3. If `has_changes` false → `empty_hint` + ask target.
-4. Obey `output_language` / `output_language_rule` from snapshot (or user chat override). If `zh`, write the **whole** review in Chinese prose — do not default to English because `LANG=en_US`.
-5. Read `review_profile` + `agent_hints.speed_contract` and **obey**:
-   - **instant** → **zero** further tools; review from `diff_patch` + `file_contents` + `stack_excerpts`; **oneshot** full report in the next message.
-   - **standard** → ≤1 parallel read batch only if `full_file_read_paths` non-empty; then oneshot.
-   - **deep** → ≤3 tool batches; stream findings; then Summary.
-6. Never repeat `git status`. Never load `review-depth.md` on instant/standard.
+```bash
+python3 "${HOME}/.agents/skills/deep-review/scripts/review_snapshot.py" --compact
+# or repo path:
+# python3 skills/engineering/deep-review/scripts/review_snapshot.py --compact
+```
+
+Other modes (still **one** call):  
+`--mode staged` | `--mode commit --commit HEAD` | `--mode branch-diff --base main` | `--mode file --file p`  
+`--profile deep` only when user wants slow/thorough.
+
+## Then stop tools
+
+From the JSON, write the review:
+
+- Language = `output_language` / `output_language_rule` (zh → 中文正文). Never use shell `LANG` alone.
+- Evidence = `diff_patch` + `file_contents.files` + `stack_excerpts`
+- If `agent_hints.max_tool_batches_after_snapshot == 0` → **zero** further tools (default)
+
+## Output
+
+Findings (if any) → index if ≥2 → Review Summary table → Limitations/Questions only if needed.  
+See skill `SKILL.md` for finding format and risk weights.
+
+## Forbidden after snapshot
+
+`Read` / `Grep` / `Glob` / `Task` / second `Bash` / reloading skill files / opening `review-depth.md`.
 
 ## Hard rules
 
-- Read-only: no modify/stage/commit/push/fix/patch.
-- No style nits; no padded findings; evidence + trigger required.
-- Weights/decision: `SKILL.md` Risk Score.
-- Language: follow snapshot `output_language` (`zh`→中文正文, `en`→English). User chat override wins. Never trust shell `LANG` alone.
+- Read-only  
+- Real defects only  
+- Evidence + trigger on every finding  

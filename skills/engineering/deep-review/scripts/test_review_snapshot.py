@@ -339,6 +339,7 @@ class TestClassifyReviewProfile(unittest.TestCase):
         self.assertEqual(profile, "deep")
 
     def test_standard_band(self):
+        # Medium-size diffs now map to oneshot instant (speed bias).
         profile = rs.classify_review_profile(
             reviewable_count=10,
             total_lines=400,
@@ -348,7 +349,20 @@ class TestClassifyReviewProfile(unittest.TestCase):
             package_count=1,
             change_types=["feature_or_logic"],
         )
-        self.assertEqual(profile, "standard")
+        self.assertEqual(profile, "instant")
+
+    def test_force_deep(self):
+        profile = rs.classify_review_profile(
+            reviewable_count=1,
+            total_lines=10,
+            large_diff=False,
+            security_paths=[],
+            has_migration=False,
+            package_count=1,
+            change_types=["feature_or_logic"],
+            force_profile="deep",
+        )
+        self.assertEqual(profile, "deep")
 
 
 class TestExtractStackExcerpts(unittest.TestCase):

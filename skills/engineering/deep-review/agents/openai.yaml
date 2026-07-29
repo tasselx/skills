@@ -1,21 +1,15 @@
 interface:
   display_name: "Deep Review"
-  short_description: "Production-level code review with severity and confidence classification"
-  long_description: "Performs a production-level, read-only code review of code changes. Runs a local snapshot helper for diff stats, stack detection, and scope, then analyzes intent, architecture, correctness, security, performance, reliability, and maintainability. Classifies findings by severity (Critical/High/Medium/Low) and confidence (Confirmed/Likely/Potential) with quantified risk scoring and a merge decision."
-  default_prompt: "Use $deep-review to review the current code changes and report all findings."
+  short_description: "Fast read-only git diff review (one snapshot + oneshot report)"
+  long_description: "Runs one local review_snapshot.py call that embeds the diff and small file contents, then writes production-focused findings with severity/confidence and a merge decision. Default profile is oneshot (no repo exploration). Use --profile deep only for large/security-sensitive changes."
+  default_prompt: "Use $deep-review. Run exactly one snapshot script call, then write the full review immediately with zero further tools. Obey output_language from the snapshot."
   capabilities:
     - production-level-review
     - defect-detection
     - security-vulnerability-detection
-    - performance-analysis
-    - architecture-review
-    - regression-analysis
-    - observability-check
-    - deployment-safety-check
     - severity-and-confidence-classification
     - quantified-risk-scoring
     - merge-decision
-    - tech-stack-checklists
     - diff-snapshot
   modes:
     - uncommitted
