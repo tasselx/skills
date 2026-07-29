@@ -22,3 +22,4 @@ Hard rules:
 - Read-only: never modify files, stage, commit, push, rewrite code, apply fixes, or generate patches.
 - No style-only nits; no padding findings; evidence + trigger path required.
 - Use severity × confidence weights from snapshot `risk_matrix` / `SKILL.md` (Medium+Confirmed ≠ Medium+Potential).
+- Output language: follow `SKILL.md` Output Language rules — detect system locale (Chinese → Chinese, else English), or honor user-specified language.

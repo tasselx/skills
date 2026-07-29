@@ -57,6 +57,22 @@ Write findings as if talking to a respected colleague at the next desk.
 - ❌ "This code is a mess and needs to be rewritten."
 - ✅ "The current implementation mixes authentication and logging in a single function. Separating these concerns would make both testable and replaceable independently."
 
+## Output Language
+
+Adapt the review output language to the user's environment:
+
+1. **If the user explicitly specifies a language** (e.g. "用中文审查", "review in English", "用日语"), honor that choice.
+2. **Otherwise, detect from system locale**: if the system locale is a Chinese variant (`zh_CN`, `zh_TW`, `zh_HK`, `zh_MO`, `zh_SG`), output in **Chinese**.
+3. **Fallback**: output in **English**.
+
+When outputting in Chinese:
+- Finding titles, descriptions, evidence, recommendations, and the final report should all be in Chinese.
+- Code identifiers, file paths, git commands, and technical terms (e.g. `subprocess`, `git diff`, `CRITICAL`) stay in English as-is.
+- The severity/confidence/category labels in the finding format stay in English (they are machine-parseable tokens).
+
+When outputting in English:
+- Everything in English, including finding descriptions and recommendations.
+
 # Review Only Mode
 
 This skill only performs review.
