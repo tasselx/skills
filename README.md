@@ -8,9 +8,9 @@ This is an installable collection of agent-neutral skills for coding agents. Mor
 
 `git-auto-commit` analyzes real Git changes, learns recent commit style, generates mixed Chinese-English commit messages (Chinese description with English technical terms), and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
 
-`deep-review` 对指定代码变更执行只读的 defect-first 深度审查。它收集 diff 上下文（未提交改动、staged 改动、指定 commit、或分支差异），然后覆盖正确性、安全、性能、API 设计、错误处理、测试覆盖和可维护性七大类别，返回按严重级别排序的所有可执行发现。内置密钥检测、冲突检测、语言识别和大 diff 预警。
+`deep-review` 对未提交的代码变更执行生产级只读审查。它通过 `git status`、`git diff`、`git diff --cached` 收集改动上下文，覆盖正确性、可靠性、安全、性能、架构、测试、回归、可观测性和部署安全等类别，返回按严重级别（Critical / High / Medium / Low）和置信度（Confirmed / Likely / Potential）分类的所有可执行发现，并给出风险评分和合并建议。
 
-`deep-review` performs a read-only, defect-first code review of a specified code change. It collects diff context (uncommitted changes, staged changes, a specific commit, or a branch diff), then reviews across seven categories: correctness, security, performance, API design, error handling, test coverage, and maintainability. It returns every actionable finding sorted by severity. Built-in detection for secrets, conflicts, language identification, and large diff warnings.
+`deep-review` performs a production-level, read-only code review of uncommitted code changes. It gathers diff context via `git status`, `git diff`, and `git diff --cached`, then reviews across correctness, reliability, security, performance, architecture, testing, regression, observability, and deployment safety. It returns every actionable finding classified by severity (Critical / High / Medium / Low) and confidence (Confirmed / Likely / Potential), with a final risk score and merge recommendation.
 
 本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
@@ -183,18 +183,12 @@ $deep-review
 
 ```text
 Use the deep-review skill to review the current uncommitted changes.
-Use the deep-review skill to review commit abc123.
-Use the deep-review skill to review this branch against main.
-Use the deep-review skill to review only staged changes.
 ```
 
 中文 prompt：
 
 ```text
 使用 deep-review skill 审查当前未提交的改动。
-使用 deep-review skill 审查 commit abc123。
-使用 deep-review skill 审查当前分支相对 main 的差异。
-使用 deep-review skill 只审查 staged 的改动。
 ```
 
 ## 技能列表
@@ -206,7 +200,7 @@ Use the deep-review skill to review only staged changes.
 User-invoked:
 
 - [`git-auto-commit`](./skills/engineering/git-auto-commit/SKILL.md) — 分析当前 Git 改动并创建安全的中英双语本地提交。
-- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 对指定代码变更执行只读的 defect-first 深度审查，覆盖正确性、安全、性能、API 设计、错误处理、测试覆盖和可维护性，返回所有可执行的发现。
+- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 对未提交的代码变更执行生产级只读审查，覆盖正确性、可靠性、安全、性能、架构、测试、回归、可观测性和部署安全，按严重级别和置信度分类，返回风险评分和合并建议。
 
 ## 项目结构
 
@@ -230,10 +224,7 @@ User-invoked:
 │       └── deep-review/
 │           ├── SKILL.md
 │           ├── agents/openai.yaml
-│           ├── commands/deep-review.md
-│           ├── references/review-checklist.md
-│           └── scripts/
-│               └── collect_review_context.py
+│           └── commands/deep-review.md
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── package.json
@@ -262,6 +253,6 @@ The skill creates local commits only. It stops for confirmation when it detects 
 
 ### deep-review
 
-这个技能是纯只读的：永远不会修改代码、staging、commit 或 push。审查脚本 `collect_review_context.py` 只执行 `git diff`、`git status`、`git log` 等只读命令，不会写入或修改任何文件。审查结果按严重级别（CRITICAL > WARNING > SUGGESTION > PRAISE）排序，每条发现都包含具体文件路径、行号、类别描述和可执行的修复建议。不确定的发现会被降级或省略，以避免误报。
+这个技能是纯只读的：永远不会修改代码、staging、commit 或 push。它直接使用 `git status`、`git diff`、`git diff --cached` 等只读命令收集改动上下文，不写入或修改任何文件。审查结果按严重级别（Critical > High > Medium > Low）和置信度（Confirmed > Likely > Potential）分类，每条发现都包含文件路径、行号、证据描述和可执行的修复建议。不确定的发现会被降级或省略，以避免误报。最终输出包含风险评分和合并建议。
 
-This skill is strictly read-only: it never modifies code, stages files, commits, or pushes. The review script `collect_review_context.py` only runs read-only Git commands (`git diff`, `git status`, `git log`). Findings are sorted by severity (CRITICAL > WARNING > SUGGESTION > PRAISE), each with a specific file path, line number, category, description, and actionable fix suggestion. Uncertain findings are downgraded or omitted to avoid false positives.
+This skill is strictly read-only: it never modifies code, stages files, commits, or pushes. It gathers change context directly via read-only Git commands (`git status`, `git diff`, `git diff --cached`). Findings are classified by severity (Critical > High > Medium > Low) and confidence (Confirmed > Likely > Potential), each with a file path, line number, evidence, and actionable recommendation. Uncertain findings are downgraded or omitted to avoid false positives. The final output includes a risk score and merge recommendation.

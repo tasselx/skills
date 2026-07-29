@@ -1,18 +1,23 @@
 interface:
   display_name: "Deep Review"
-  short_description: "Defect-first code review with actionable findings"
-  long_description: "Performs a thorough, read-only, defect-first review of a code change (uncommitted, staged, a commit, or a branch diff) and returns every actionable finding with severity levels. Reviews across correctness, security, performance, API design, error handling, test coverage, and maintainability."
+  short_description: "Production-level code review with severity and confidence classification"
+  long_description: "Performs a production-level, read-only code review of uncommitted code changes. Analyzes code intent, architecture, correctness, security, performance, reliability, and maintainability. Reviews across correctness, reliability, security, performance, architecture, testing, regression, observability, and deployment safety. Classifies findings by severity (Critical/High/Medium/Low) and confidence (Confirmed/Likely/Potential) with a final risk score and merge recommendation."
   default_prompt: "Use $deep-review to review the current code changes and report all findings."
   capabilities:
-    - diff-context-collection
-    - defect-first-review
+    - production-level-review
+    - defect-detection
     - security-vulnerability-detection
     - performance-analysis
-    - api-compatibility-check
-    - test-coverage-assessment
-    - actionable-findings
+    - architecture-review
+    - regression-analysis
+    - observability-check
+    - deployment-safety-check
+    - severity-and-confidence-classification
+    - risk-scoring
+    - merge-recommendation
   modes:
     - uncommitted
     - staged
     - commit
     - branch-diff
+    - file
