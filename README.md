@@ -8,9 +8,9 @@ This is an installable collection of agent-neutral skills for coding agents. Mor
 
 `git-auto-commit` analyzes real Git changes, learns recent commit style, generates mixed Chinese-English commit messages (Chinese description with English technical terms), and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
 
-`deep-review` 对未提交的代码变更执行生产级只读审查。它通过 `git status`、`git diff`、`git diff --cached` 收集改动上下文，覆盖正确性、可靠性、安全、性能、架构、测试、回归、可观测性和部署安全等类别，返回按严重级别（Critical / High / Medium / Low）和置信度（Confirmed / Likely / Potential）分类的所有可执行发现，并给出风险评分和合并建议。
+`deep-review` 对代码变更执行生产级只读审查。它先运行 `scripts/review_snapshot.py` 收集 diff 规模、变更类型、技术栈与审查范围，再覆盖正确性、可靠性、安全、性能、架构、测试、回归、可观测性和部署安全等类别；命中技术栈时必须套用 `references/tech-stacks.md`。发现按严重级别与置信度分类，用量化权重计算风险分并给出合并建议。
 
-`deep-review` performs a production-level, read-only code review of uncommitted code changes. It gathers diff context via `git status`, `git diff`, and `git diff --cached`, then reviews across correctness, reliability, security, performance, architecture, testing, regression, observability, and deployment safety. It returns every actionable finding classified by severity (Critical / High / Medium / Low) and confidence (Confirmed / Likely / Potential), with a final risk score and merge recommendation.
+`deep-review` performs a production-level, read-only code review. It first runs `scripts/review_snapshot.py` for diff size, change types, stacks, and scope, then reviews correctness, reliability, security, performance, architecture, testing, regression, observability, and deployment safety. When stacks are detected it must apply `references/tech-stacks.md`. Findings use severity × confidence weights for a quantified risk score and merge recommendation.
 
 本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
@@ -208,7 +208,7 @@ Use the deep-review skill to review specific files.
 User-invoked:
 
 - [`git-auto-commit`](./skills/engineering/git-auto-commit/SKILL.md) — 分析当前 Git 改动并创建安全的中英双语本地提交。
-- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 对未提交的代码变更执行生产级只读审查，覆盖正确性、可靠性、安全、性能、架构、测试、回归、可观测性和部署安全，按严重级别和置信度分类，返回风险评分和合并建议。
+- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 生产级只读审查：snapshot 脚本 + tech-stack 清单 + severity×confidence 量化风险分与合并建议。
 
 ## 项目结构
 
@@ -232,7 +232,11 @@ User-invoked:
 │       └── deep-review/
 │           ├── SKILL.md
 │           ├── agents/openai.yaml
-│           └── commands/deep-review.md
+│           ├── commands/deep-review.md
+│           ├── references/tech-stacks.md
+│           └── scripts/
+│               ├── review_snapshot.py
+│               └── test_review_snapshot.py
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── package.json
@@ -261,6 +265,6 @@ The skill creates local commits only. It stops for confirmation when it detects 
 
 ### deep-review
 
-这个技能是纯只读的：永远不会修改代码、staging、commit 或 push。它直接使用 `git status`、`git diff`、`git diff --cached` 等只读命令收集改动上下文，不写入或修改任何文件。审查结果按严重级别（Critical > High > Medium > Low）和置信度（Confirmed > Likely > Potential）分类，每条发现都包含文件路径、行号、证据描述和可执行的修复建议。不确定的发现会被降级或省略，以避免误报。最终输出包含风险评分和合并建议。
+这个技能是纯只读的：永远不会修改代码、staging、commit 或 push。Agent 应先运行 `scripts/review_snapshot.py`（只读 Git 子进程，输出 JSON），再用 diff 与完整文件做审查；命中的技术栈必须读取 `references/tech-stacks.md`。发现按严重级别与置信度用权重表计分（Medium+Confirmed 重于 Medium+Potential），输出风险分、合并建议与 limitations。`commands/deep-review.md` 只做入口，规则以 `SKILL.md` 为唯一真相源。
 
-This skill is strictly read-only: it never modifies code, stages files, commits, or pushes. It gathers change context directly via read-only Git commands (`git status`, `git diff`, `git diff --cached`). Findings are classified by severity (Critical > High > Medium > Low) and confidence (Confirmed > Likely > Potential), each with a file path, line number, evidence, and actionable recommendation. Uncertain findings are downgraded or omitted to avoid false positives. The final output includes a risk score and merge recommendation.
+This skill is strictly read-only: it never modifies code, stages, commits, or pushes. Agents should run `scripts/review_snapshot.py` first (read-only Git, JSON output), then review diffs and full files; detected stacks require `references/tech-stacks.md`. Findings use a severity × confidence weight table (Medium+Confirmed outweighs Medium+Potential). `commands/deep-review.md` is a thin entrypoint; `SKILL.md` is the single source of truth.

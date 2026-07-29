@@ -1,7 +1,7 @@
 interface:
   display_name: "Deep Review"
   short_description: "Production-level code review with severity and confidence classification"
-  long_description: "Performs a production-level, read-only code review of code changes. Analyzes code intent, architecture, correctness, security, performance, reliability, and maintainability. Reviews across correctness, reliability, security, performance, architecture, testing, regression, observability, and deployment safety. Handles monorepo multi-package changes, mixed changes, and special change types (generated code, docs, tests, binary assets). Classifies findings by severity (Critical/High/Medium/Low) and confidence (Confirmed/Likely/Potential) with a risk score and merge decision."
+  long_description: "Performs a production-level, read-only code review of code changes. Runs a local snapshot helper for diff stats, stack detection, and scope, then analyzes intent, architecture, correctness, security, performance, reliability, and maintainability. Classifies findings by severity (Critical/High/Medium/Low) and confidence (Confirmed/Likely/Potential) with quantified risk scoring and a merge decision."
   default_prompt: "Use $deep-review to review the current code changes and report all findings."
   capabilities:
     - production-level-review
@@ -13,8 +13,10 @@ interface:
     - observability-check
     - deployment-safety-check
     - severity-and-confidence-classification
-    - risk-scoring
+    - quantified-risk-scoring
     - merge-decision
+    - tech-stack-checklists
+    - diff-snapshot
   modes:
     - uncommitted
     - staged

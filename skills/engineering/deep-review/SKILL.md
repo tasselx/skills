@@ -69,37 +69,54 @@ Only provide: findings, explanations, recommendations.
 
 Execute in this order:
 
-1. **Gather changes** — Run `git status`, `git diff`, `git diff --cached`. Identify modified, added, deleted, renamed files. Read: complete changed files, surrounding code, related classes, interfaces, callers, dependencies. If no uncommitted changes exist, explain "No local changes were found." and ask whether to review: staged changes (`git diff --cached`), latest commit (`git show HEAD`), a specific commit (`git show <sha>`), branch diff (`git diff <base>...HEAD`), or specific files. (See [Review Targets](#review-targets) below for mode mapping.)
-2. **Read context** — Beyond the changed files themselves, read surrounding code, related classes, interfaces, callers, and dependencies to understand the full impact.
-3. **Classify change** — Determine change type (bug fix, feature, refactor, dependency update, configuration change, etc.) and adjust review focus.
-4. **Understand intent** — Reconstruct: change goal, implementation approach, affected components, expected behavior. Compare expected vs actual implementation.
-5. **Analyze impact** — Trace callers, dependencies, data flow, state flow, API contracts, storage changes. Look for breaking changes, hidden side effects, compatibility problems.
-6. **Deep review** — Review across all categories in priority order: correctness → reliability → security → performance → architecture → testing → regression → observability → deployment safety.
-7. **Check bug patterns** — Scan for common production bug patterns: state, async, error handling, data, resource, security.
-8. **Verify, deduplicate, finalize** — For each candidate finding: (a) verify triggerability — Can I point to exact code? Can I describe how it fails? Would a production engineer care? Drop if any answer is no. (b) Deduplicate — combine findings caused by the same root cause. (c) Self-verify — Is there enough evidence? Could existing code prevent this? Would this happen in production? Remove weak findings. (See [False Positive Prevention](#false-positive-prevention), [Finding Deduplication](#finding-deduplication), [Self Verification](#self-verification) for full criteria.)
-9. **Compile output** — Format each finding with severity + confidence. Sort by severity → confidence → user impact → probability → recovery difficulty.
-10. **Assess risk** — Calculate overall risk score (severity × confidence) and merge recommendation.
-11. **Final report** — Output review summary, limitations, and questions for author.
+1. **Locate skill dir** — If this file is loaded from disk, use its parent directory as `SKILL_DIR`; otherwise ask for the installed `deep-review` path.
+2. **Snapshot first** — Run the read-only helper (preferred over ad-hoc git parsing):
+
+```bash
+export SKILL_DIR="/path/to/deep-review"
+# uncommitted (default)
+python3 "$SKILL_DIR/scripts/review_snapshot.py"
+# other modes:
+# python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode staged
+# python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode commit --commit HEAD
+# python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode branch-diff --base main
+# python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode file --file path/a.py --file path/b.ts
+```
+
+Use snapshot fields: `has_changes`, `empty_hint`, `large_diff`, `change_types`, `detected_stacks`, `must_read_tech_stack_sections`, `package_roots`, `mixed_changes_suspected`, `prioritized_paths`, `excluded_paths`, `files`, `risk_matrix`. If `has_changes` is false, print `empty_hint` (or "No local changes were found.") and ask which target to review.
+
+3. **Gather diffs** — After snapshot, still inspect: `git status --short`, full `git diff` / mode-specific range, and complete changed source files (not only the patch hunks). Skip paths in `excluded_paths` unless they are the review target. Prefer `prioritized_paths` first.
+4. **Read context** — Surrounding code, related classes, interfaces, callers, dependencies.
+5. **Load tech-stack checks (required when stacks detect)** — If `must_read_tech_stack_sections` is non-empty, **must** open `$SKILL_DIR/references/tech-stacks.md` and apply every listed section before deep review. Do not skip this step when stacks were detected. If none match, Phase 3 generic categories suffice.
+6. **Classify change** — Prefer snapshot `change_types`; refine with commit message / diff intent (bug fix, feature, refactor, dependency, config, etc.).
+7. **Understand intent** — Goal, approach, components, expected behavior vs actual.
+8. **Analyze impact** — Callers, dependencies, data/state flow, API contracts, storage. For monorepo use `package_roots`. For `mixed_changes_suspected`, group findings by change group.
+9. **Deep review** — Categories in order: correctness → reliability → security → performance → architecture → testing → regression → observability → deployment safety (+ stack-specific checks).
+10. **Check bug patterns** — State, async, error handling, data, resource, security.
+11. **Verify, deduplicate, finalize** — Triggerability, root-cause dedupe, self-verify (see sections below). Drop weak findings.
+12. **Compile output** — Severity + confidence; sort by severity → confidence → impact → probability → recovery difficulty.
+13. **Assess risk** — Use quantified [Risk Score](#risk-score) (severity × confidence weights from snapshot `risk_matrix` or the table below) and merge decision.
+14. **Final report** — Summary, limitations, questions for author.
 
 # Review Targets
 
-Determine what to review based on user intent:
+Determine what to review based on user intent. Always run the snapshot with the matching `--mode` first.
 
-| Mode | User says | Git command |
-|------|-----------|-------------|
-| uncommitted (default) | "review this", "review changes" | `git diff HEAD` + `git diff --cached` |
-| staged | "review staged" | `git diff --cached` |
-| commit | "review commit abc123" | `git show <sha>` |
-| branch-diff | "review this branch", "review vs main" | `git diff <base>...HEAD` |
-| file | "review file X" | Read full file content directly |
+| Mode | User says | Snapshot | Diff follow-up |
+|------|-----------|----------|----------------|
+| uncommitted (default) | "review this", "review changes" | `review_snapshot.py` | `git diff HEAD` + `git diff --cached` |
+| staged | "review staged" | `--mode staged` | `git diff --cached` |
+| commit | "review commit abc123" | `--mode commit --commit <sha>` | `git show <sha>` |
+| branch-diff | "review this branch", "review vs main" | `--mode branch-diff --base <ref>` | `git diff <base>...HEAD` |
+| file | "review file X" | `--mode file --file X` | Read full file content |
 
 If the target is ambiguous, ask the user to clarify before proceeding.
 
 # Review Scope Control
 
-Before analysis, identify review scope.
+Before analysis, identify review scope. Prefer snapshot `excluded_paths` / `prioritized_paths`.
 
-Exclude by default: build output, dependency caches, vendor directories, lock files unless dependency changes are the target.
+Exclude by default: build output, dependency caches, vendor directories, lock files unless dependency changes are the target (snapshot tags these as `generated_or_lock` / `binary`).
 
 **Generated code** (protobuf stubs, OpenAPI clients, GraphQL codegen): skip unless the generator config or template itself changed. If the generator config changed, review the config diff and flag that downstream generated output may need regeneration.
 
@@ -114,10 +131,13 @@ Prioritize:
 
 When a single diff contains multiple unrelated changes (e.g., bug fix + refactor + formatting), the review becomes less reliable because each change type has different risk profiles and review focus.
 
+If snapshot `mixed_changes_suspected` is true, treat that as a strong signal and still confirm with the checks below.
+
 **Detect mixed changes by checking:**
 - Are the changed files related to the same feature or fix?
 - Do the commit messages (if available) suggest multiple intents?
 - Are there formatting-only changes mixed with logic changes?
+- Do snapshot `change_types` / `top_level_groups` show divergent intents?
 
 **If changes are related:**
 - Review as a single coherent change.
@@ -132,10 +152,10 @@ Do not refuse to review mixed changes. Always complete the review — just flag 
 
 # Monorepo / Multi-Package Handling
 
-When a diff spans multiple packages or services in a monorepo (e.g., `packages/auth/`, `packages/api/`, `packages/shared/` all changed), the changes are likely related but cross package boundaries.
+When a diff spans multiple packages or services in a monorepo (e.g., `packages/auth/`, `packages/api/`, `packages/shared/` all changed), the changes are likely related but cross package boundaries. Snapshot `package_roots` lists detected package paths.
 
 **Review strategy:**
-1. Identify the dependency graph between changed packages (which package imports which).
+1. Start from snapshot `package_roots`; identify the dependency graph between changed packages.
 2. Start from the root cause package (the one that originated the change, usually the deepest dependency).
 3. Trace the impact outward: root package → direct dependents → transitive dependents.
 4. Check cross-package contract changes: if package A changes an exported interface, verify all packages that import A are updated.
@@ -155,11 +175,11 @@ Do not treat monorepo multi-package changes as "mixed changes" — they are typi
 
 # Large Diff Handling
 
-If diff exceeds 50 changed files or 2000 changed lines, do not blindly scan everything.
+If snapshot `large_diff` is true (default thresholds: 50 files or 2000 lines), do not blindly scan everything.
 
 Explain: "The change set is too large for reliable review (N files, M lines changed)."
 
-Recommend reviewing: critical modules first, high-risk files, incremental batches.
+Recommend reviewing: `prioritized_paths` and security-sensitive modules first, then remaining production code in batches. Still produce a partial report and list unscanned paths under Review Limitations.
 
 # Review Priority Order
 
@@ -449,12 +469,24 @@ Description of the issue, what can go wrong, and the context needed to understan
 **Recommendation:** Concrete, actionable fix or approach. Code snippet when helpful.
 ```
 
+## Severity Color Markers
+
+Use a colored emoji marker at the start of each finding heading so reviewers can
+visually scan severity at a glance:
+
+| Severity | Marker | Meaning |
+|----------|--------|---------|
+| Critical | :red_circle: `[CRITICAL]` | Must fix before merge |
+| High | :orange_circle: `[HIGH]` | Should fix before release |
+| Medium | :yellow_circle: `[MEDIUM]` | Important improvement |
+| Low | :green_circle: `[LOW]` | Minor improvement |
+
 ## Example Findings
 
 ### Example 1: Critical + Confirmed + Security
 
 ```text
-### [CRITICAL] SQL injection via unsanitized user input in search endpoint
+### :red_circle: [CRITICAL] SQL injection via unsanitized user input in search endpoint
 
 **Confidence:** Confirmed
 **Location:** `src/api/search.py:42`
@@ -476,7 +508,7 @@ cursor.execute("SELECT * FROM items WHERE name LIKE %s", (f"%{query}%",))
 ### Example 2: High + Likely + Correctness
 
 ```text
-### [HIGH] Off-by-one error in pagination loop skips first result page
+### :orange_circle: [HIGH] Off-by-one error in pagination loop skips first result page
 
 **Confidence:** Likely
 **Location:** `src/services/paginator.go:28-35`
@@ -499,7 +531,7 @@ for i := 0; i < totalPages; i++ {
 ### Example 3: Medium + Potential + Reliability
 
 ```text
-### [MEDIUM] Missing timeout on outbound HTTP call may hang indefinitely
+### :yellow_circle: [MEDIUM] Missing timeout on outbound HTTP call may hang indefinitely
 
 **Confidence:** Potential
 **Location:** `src/clients/payment.go:67`
@@ -525,7 +557,7 @@ req = req.WithContext(ctx)
 ### Example 4: Low + Confirmed + Maintainability
 
 ```text
-### [LOW] Magic number without named constant reduces readability
+### :green_circle: [LOW] Magic number without named constant reduces readability
 
 **Confidence:** Confirmed
 **Location:** `src/utils/pricing.ts:15`
@@ -548,17 +580,33 @@ return price * DISCOUNT_RATE;
 
 # Technology Specific Review
 
-When the change touches a known technology stack, apply the additional checks for that stack. See [`references/tech-stacks.md`](./references/tech-stacks.md) for the full checklist covering: Flutter/Dart, Frontend (React/Vue/Angular/Svelte), iOS, Android, Backend, DevOps, Python, Go, Rust, JVM, C/C++, .NET, Node.js/TypeScript, Ruby/Rails, PHP, Database/SQL, GraphQL, React Native, Unity/Unreal.
+**Mandatory when stacks are detected.**
 
-If none matches, the generic categories in Phase 3 already provide full coverage.
+1. Read snapshot field `must_read_tech_stack_sections` (and `detected_stacks`).
+2. If non-empty, open [`references/tech-stacks.md`](./references/tech-stacks.md) and apply **each** listed section checklist during Phase 3.
+3. In **Review Limitations**, state which stack sections were applied. If you could not read the file, say so and keep generic Phase 3 only.
+
+Covered sections: Flutter/Dart, Frontend, iOS, Android, Backend, DevOps, Python, Go, Rust, JVM, C/C++, .NET, Node.js/TypeScript, Ruby/Rails, PHP, Database/SQL, GraphQL, React Native, Unity/Unreal.
+
+If none matches, generic Phase 3 categories already provide full coverage.
 
 # Test Execution Rules
 
-Before running expensive tests, understand project type.
+Tests are optional evidence — this skill stays read-only toward source. Running tests does not mean fixing code.
 
-Prefer: static analysis, targeted tests, affected module tests.
+**When to run targeted tests (prefer over full suite):**
+- Change touches business-critical paths (auth, payments, migrations, concurrency).
+- Finding confidence would flip between Likely and Confirmed with a quick test signal.
+- User explicitly asks to verify with tests.
 
-Do not run full test suites unless: change is large, core functionality changed, migration involved.
+**When not to run:**
+- Docs-only / comment-only / pure formatting.
+- No test runner or environment available (note in Review Limitations).
+- Full suite would be the only option and change is small/isolated.
+
+Prefer: static analysis, single-package / affected-module tests. Failures may upgrade confidence or surface new correctness findings; they do not by themselves force Critical unless production impact is clear.
+
+Do not run full test suites unless: change is large, core functionality changed, or migration involved.
 
 # Output Length Control
 
@@ -568,35 +616,54 @@ Do not invent findings to make the review longer.
 
 # Risk Score
 
-Calculate overall risk based on **severity × confidence**, not severity alone. A `Critical + Potential` finding (only triggers under rare conditions) does not carry the same weight as `Critical + Confirmed` (proven to exist).
+Calculate overall risk from **severity × confidence weights**, not severity alone. A `Critical + Potential` finding does not weigh the same as `Critical + Confirmed`. A `Medium + Confirmed` weighs more than `Medium + Potential`.
 
-## Risk Matrix
+Use snapshot `risk_matrix` when present; otherwise use the tables below.
 
-| Highest Finding | Confidence | Risk Level |
-|-----------------|------------|------------|
-| Critical | Confirmed | Very High |
-| Critical | Likely | Very High |
-| Critical | Potential | High |
-| High | Confirmed | High |
-| High | Likely | High |
-| High | Potential | Medium |
-| Any Medium | — | Medium |
-| 5+ Low | — | Medium |
-| Only Low, or no findings | — | Low |
+## Finding Weights
 
-**Additional modifiers:**
-- If 3+ findings share the same root cause, downgrade risk by one level (single fix resolves all).
-- If all findings are `Potential` confidence, cap risk at Medium — the issues may not manifest in production.
+| Severity | Confirmed | Likely | Potential |
+|----------|-----------|--------|-----------|
+| Critical | 100 | 80 | 45 |
+| High | 55 | 40 | 22 |
+| Medium | 20 | 14 | 8 |
+| Low | 4 | 3 | 1 |
+
+**Raw score** = sum of weights for all reported findings after deduplication.
+
+**Root-cause modifier:** If 3+ findings share one root cause, count the highest at full weight and each extra shared finding at 25% weight (one fix clears the cluster).
+
+**Potential-only cap:** If every finding is `Potential`, cap final risk level at **Medium**.
+
+**Medium calibration:** `Medium + Potential` alone does **not** force Medium risk. Only Confirmed/Likely Medium (or enough weight from many findings, score ≥ 15) lands at Medium. Pure `Medium + Potential` with score < 15 → **Low**.
+
+## Risk Level Bands
+
+| Risk Level | Condition (after modifiers) |
+|------------|-----------------------------|
+| **Very High** | Raw score ≥ 80 **or** any Critical + Confirmed/Likely |
+| **High** | Raw score 45–79 **or** Critical + Potential **or** High + Confirmed/Likely |
+| **Medium** | Raw score 15–44 **or** any Medium + Confirmed/Likely **or** 5+ Low findings |
+| **Low** | Raw score 0–14 with only Low/none, or only Medium + Potential below band |
+
+Include in the final report: `Raw score: N` and the band rule that fired.
 
 **Risk Level Descriptions:**
 - **Low** — Small change, isolated impact. Safe to proceed.
-- **Medium** — Multiple components affected or moderate risk. Review carefully.
-- **High** — Confirmed issues on common paths, or security/data involved. Needs attention.
-- **Very High** — Confirmed critical defect on production path. Requires thorough validation.
+- **Medium** — Moderate risk or confirmed medium issues. Review carefully.
+- **High** — Confirmed issues on common paths, or serious reliability/security concern.
+- **Very High** — Confirmed critical defect on a production path. Requires thorough validation.
 
 # Merge Decision
 
-Based on the risk score, choose one:
+Map risk level (and hard stops) to one decision:
+
+| Decision | When |
+|----------|------|
+| **BLOCK MERGE** | Risk **Very High**, or any Critical + Confirmed |
+| **REQUEST CHANGES** | Risk **High**, or any Critical (any confidence), or High + Confirmed |
+| **APPROVE WITH COMMENTS** | Risk **Medium**, or only High + Potential / Medium issues that are non-blocking |
+| **APPROVE** | Risk **Low** with no Critical/High findings |
 
 - **APPROVE** — Safe to merge. No significant issues found.
 - **APPROVE WITH COMMENTS** — Minor risks exist. Non-blocking suggestions.
@@ -613,17 +680,21 @@ Always finish with a report in this structure (render as normal markdown, not in
 
 **Files reviewed:** (list files)
 
+**Stacks applied:** (section names from tech-stacks.md, or "none")
+
 **Issues found:**
 - Critical: (number)
 - High: (number)
 - Medium: (number)
 - Low: (number)
 
+**Raw score:** (number from weight table)
+
 **Risk Level:** Low / Medium / High / Very High
 
 **Merge Decision:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES | BLOCK MERGE
 
-**Final Decision:** Briefly explain why.
+**Final Decision:** Briefly explain why (cite highest findings and score band).
 
 ---
 

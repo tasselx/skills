@@ -12,3 +12,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Workbuddy working memory
+.workbuddy/
