@@ -272,6 +272,56 @@ class TestFinalize(unittest.TestCase):
         self.assertTrue(out["large_diff"])
         self.assertIn("python", {s["id"] for s in out["detected_stacks"]})
         self.assertIn("Python", out["must_read_tech_stack_sections"])
+        self.assertNotIn("risk_matrix", out)
+        self.assertIn("full_file_read_paths", out)
+        self.assertIn("agent_hints", out)
+
+    def test_risk_matrix_opt_in(self):
+        core = {
+            "mode": "uncommitted",
+            "paths": ["a.py"],
+            "entries": [{"code": "M", "path": "a.py"}],
+            "files": [
+                {
+                    "path": "a.py",
+                    "status": "M",
+                    "tags": ["production_code"],
+                    "exclude_by_default": False,
+                }
+            ],
+            "added_lines": 1,
+            "deleted_lines": 0,
+            "has_changes": True,
+        }
+        out = rs.finalize(core, "/tmp/repo", "main", False, include_risk_matrix=True)
+        self.assertIn("risk_matrix", out)
+
+
+class TestExtractStackExcerpts(unittest.TestCase):
+    def test_extracts_python_only(self):
+        skill_dir = str(Path(__file__).resolve().parent.parent)
+        out = rs.extract_stack_excerpts(skill_dir, ["Python"])
+        self.assertIn("Python", out["sections"])
+        self.assertTrue(out["sections"]["Python"].startswith("## "))
+        self.assertEqual(out["missing"], [])
+        # Should not pull unrelated sections
+        self.assertNotIn("Go", out["sections"])
+
+    def test_empty_titles(self):
+        out = rs.extract_stack_excerpts(None, [])
+        self.assertEqual(out["sections"], {})
+
+
+class TestRunGitMany(unittest.TestCase):
+    def test_parallel_keys(self):
+        results = rs.run_git_many(
+            [
+                ("a", ["rev-parse", "--is-inside-work-tree"]),
+                ("b", ["rev-parse", "--is-inside-work-tree"]),
+            ]
+        )
+        self.assertEqual(set(results), {"a", "b"})
+        self.assertEqual(results["a"][1].strip(), "true")
 
 
 if __name__ == "__main__":

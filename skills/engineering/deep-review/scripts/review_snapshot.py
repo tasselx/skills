@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -130,6 +131,7 @@ PACKAGE_ROOT_RE = re.compile(
 
 LARGE_FILE_THRESHOLD = 50
 LARGE_LINE_THRESHOLD = 2000
+DEFAULT_DIFF_BYTE_CAP = 200_000
 
 
 def normalize_git_output(text: str) -> str:
@@ -163,6 +165,143 @@ def run_git(args: list[str], cwd: str | None = None) -> tuple[int, str, str]:
     out = normalize_git_output(proc.stdout)
     err = normalize_git_output(proc.stderr)
     return proc.returncode, out, err
+
+
+def run_git_many(
+    jobs: list[tuple[str, list[str]]],
+    cwd: str | None = None,
+) -> dict[str, tuple[int, str, str]]:
+    """Run independent git commands in parallel. ``jobs`` is ``(key, args)``."""
+    if not jobs:
+        return {}
+    if len(jobs) == 1:
+        key, args = jobs[0]
+        return {key: run_git(args, cwd=cwd)}
+
+    results: dict[str, tuple[int, str, str]] = {}
+
+    def _one(item: tuple[str, list[str]]) -> tuple[str, tuple[int, str, str]]:
+        key, args = item
+        return key, run_git(args, cwd=cwd)
+
+    with ThreadPoolExecutor(max_workers=min(8, len(jobs))) as pool:
+        for key, value in pool.map(_one, jobs):
+            results[key] = value
+    return results
+
+
+def extract_stack_excerpts(
+    skill_dir: str | None,
+    section_titles: list[str],
+) -> dict[str, object]:
+    """Pull only matched headings from tech-stacks.md (avoid full-file reads)."""
+    if not section_titles:
+        return {"sections": {}, "path": None, "missing": []}
+
+    tech_path = None
+    if skill_dir:
+        candidate = Path(skill_dir) / "references" / "tech-stacks.md"
+        if candidate.is_file():
+            tech_path = candidate
+    if tech_path is None:
+        # Script lives in <skill>/scripts/review_snapshot.py
+        here = Path(__file__).resolve().parent.parent / "references" / "tech-stacks.md"
+        if here.is_file():
+            tech_path = here
+
+    if tech_path is None or not tech_path.is_file():
+        return {
+            "sections": {},
+            "path": None,
+            "missing": list(section_titles),
+            "error": "tech-stacks.md not found",
+        }
+
+    text = tech_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    # Map heading text -> (start_line_idx, end_line_idx exclusive)
+    headings: list[tuple[str, int]] = []
+    for idx, line in enumerate(lines):
+        if line.startswith("## "):
+            headings.append((line[3:].strip(), idx))
+
+    def find_heading(title: str) -> int | None:
+        title_l = title.lower()
+        for h, idx in headings:
+            if h.lower() == title_l or title_l in h.lower() or h.lower() in title_l:
+                return idx
+        return None
+
+    sections: dict[str, str] = {}
+    missing: list[str] = []
+    for title in section_titles:
+        start = find_heading(title)
+        if start is None:
+            missing.append(title)
+            continue
+        # end at next ## or EOF
+        end = len(lines)
+        for h, idx in headings:
+            if idx > start:
+                end = idx
+                break
+        body = "\n".join(lines[start:end]).strip()
+        sections[title] = body
+
+    return {
+        "sections": sections,
+        "path": str(tech_path),
+        "missing": missing,
+    }
+
+
+def collect_diff_patch(
+    root: str,
+    mode: str,
+    *,
+    commit: str = "",
+    base: str = "main",
+    byte_cap: int = DEFAULT_DIFF_BYTE_CAP,
+) -> dict[str, object]:
+    """Fetch the mode-specific unified diff once, capped for agent context."""
+    if mode == "uncommitted":
+        # Combined working tree vs HEAD (staged + unstaged), matching status.
+        args = ["diff", "HEAD", "--"]
+    elif mode == "staged":
+        args = ["diff", "--cached", "--"]
+    elif mode == "commit":
+        _validate_ref(commit or "HEAD", "commit ref")
+        args = ["show", "--format=", "--patch", commit or "HEAD", "--"]
+    elif mode == "branch-diff":
+        _validate_ref(base, "base ref")
+        args = ["diff", f"{base}...HEAD", "--"]
+    else:
+        return {
+            "included": False,
+            "reason": "file mode has no diff; read full file contents",
+        }
+
+    rc, out, err = run_git(args, cwd=root)
+    if rc != 0:
+        return {"included": False, "error": err or f"git exited {rc}"}
+
+    raw = out
+    encoded = raw.encode("utf-8", errors="replace")
+    truncated = len(encoded) > byte_cap
+    if truncated:
+        # Truncate on a line boundary when possible
+        cut = encoded[:byte_cap].decode("utf-8", errors="ignore")
+        if "\n" in cut:
+            cut = cut.rsplit("\n", 1)[0] + "\n"
+        raw = cut
+
+    return {
+        "included": True,
+        "truncated": truncated,
+        "byte_cap": byte_cap,
+        "bytes": len(encoded),
+        "patch": raw,
+    }
 
 
 def _validate_ref(ref: str, name: str) -> str:
@@ -502,15 +641,24 @@ def build_file_records(
 
 def snapshot_uncommitted(root: str) -> dict[str, object]:
     # Expand untracked directories to individual paths so new files are reviewable.
-    _, status_text, _ = run_git(
-        ["status", "--short", "--untracked-files=all"],
+    # Parallelize independent git metadata calls (major latency win on cold FS).
+    jobs = run_git_many(
+        [
+            ("status", ["status", "--short", "--untracked-files=all"]),
+            ("numstat", ["diff", "--numstat", "HEAD"]),
+            ("staged_numstat", ["diff", "--cached", "--numstat"]),
+            ("unstaged_numstat", ["diff", "--numstat"]),
+            ("stat", ["diff", "--stat", "HEAD"]),
+            ("cached_stat", ["diff", "--cached", "--stat"]),
+        ],
         cwd=root,
     )
-    _, numstat, _ = run_git(["diff", "--numstat", "HEAD"], cwd=root)
-    _, staged_numstat, _ = run_git(["diff", "--cached", "--numstat"], cwd=root)
-    _, unstaged_numstat, _ = run_git(["diff", "--numstat"], cwd=root)
-    _, stat, _ = run_git(["diff", "--stat", "HEAD"], cwd=root)
-    _, cached_stat, _ = run_git(["diff", "--cached", "--stat"], cwd=root)
+    status_text = jobs["status"][1]
+    numstat = jobs["numstat"][1]
+    staged_numstat = jobs["staged_numstat"][1]
+    unstaged_numstat = jobs["unstaged_numstat"][1]
+    stat = jobs["stat"][1]
+    cached_stat = jobs["cached_stat"][1]
 
     entries = parse_status(status_text)
     added, deleted, per_file = count_numstat(numstat)
@@ -556,9 +704,17 @@ def snapshot_uncommitted(root: str) -> dict[str, object]:
 
 
 def snapshot_staged(root: str) -> dict[str, object]:
-    _, name_status, _ = run_git(["diff", "--cached", "--name-status"], cwd=root)
-    _, numstat, _ = run_git(["diff", "--cached", "--numstat"], cwd=root)
-    _, stat, _ = run_git(["diff", "--cached", "--stat"], cwd=root)
+    jobs = run_git_many(
+        [
+            ("name_status", ["diff", "--cached", "--name-status"]),
+            ("numstat", ["diff", "--cached", "--numstat"]),
+            ("stat", ["diff", "--cached", "--stat"]),
+        ],
+        cwd=root,
+    )
+    name_status = jobs["name_status"][1]
+    numstat = jobs["numstat"][1]
+    stat = jobs["stat"][1]
     entries = parse_name_status(name_status)
     added, deleted, per_file = count_numstat(numstat)
     files = build_file_records(entries, per_file)
@@ -591,9 +747,17 @@ def snapshot_commit(root: str, sha: str) -> dict[str, object]:
             "added_lines": 0,
             "deleted_lines": 0,
         }
-    _, name_status, _ = run_git(["show", "--name-status", "--format=", sha], cwd=root)
-    _, numstat, _ = run_git(["show", "--numstat", "--format=", sha], cwd=root)
-    _, subject, _ = run_git(["log", "-1", "--format=%s", sha], cwd=root)
+    jobs = run_git_many(
+        [
+            ("name_status", ["show", "--name-status", "--format=", sha]),
+            ("numstat", ["show", "--numstat", "--format=", sha]),
+            ("subject", ["log", "-1", "--format=%s", sha]),
+        ],
+        cwd=root,
+    )
+    name_status = jobs["name_status"][1]
+    numstat = jobs["numstat"][1]
+    subject = jobs["subject"][1]
     entries = parse_name_status(name_status)
     added, deleted, per_file = count_numstat(numstat)
     files = build_file_records(entries, per_file)
@@ -629,10 +793,19 @@ def snapshot_branch_diff(root: str, base: str) -> dict[str, object]:
             "added_lines": 0,
             "deleted_lines": 0,
         }
-    _, name_status, _ = run_git(["diff", "--name-status", range_spec], cwd=root)
-    _, numstat, _ = run_git(["diff", "--numstat", range_spec], cwd=root)
-    _, stat, _ = run_git(["diff", "--stat", range_spec], cwd=root)
-    _, ahead, _ = run_git(["rev-list", "--count", f"{base}..HEAD"], cwd=root)
+    jobs = run_git_many(
+        [
+            ("name_status", ["diff", "--name-status", range_spec]),
+            ("numstat", ["diff", "--numstat", range_spec]),
+            ("stat", ["diff", "--stat", range_spec]),
+            ("ahead", ["rev-list", "--count", f"{base}..HEAD"]),
+        ],
+        cwd=root,
+    )
+    name_status = jobs["name_status"][1]
+    numstat = jobs["numstat"][1]
+    stat = jobs["stat"][1]
+    ahead = jobs["ahead"][1]
     entries = parse_name_status(name_status)
     added, deleted, per_file = count_numstat(numstat)
     files = build_file_records(entries, per_file)
@@ -691,7 +864,14 @@ def snapshot_files(root: str, file_paths: list[str]) -> dict[str, object]:
     }
 
 
-def finalize(core: dict[str, object], root: str, branch: str, detached: bool) -> dict[str, object]:
+def finalize(
+    core: dict[str, object],
+    root: str,
+    branch: str,
+    detached: bool,
+    *,
+    include_risk_matrix: bool = False,
+) -> dict[str, object]:
     paths = [str(p) for p in core.get("paths", [])]  # type: ignore[arg-type]
     entries = list(core.get("entries", []))  # type: ignore[arg-type]
     files = list(core.get("files", []))  # type: ignore[arg-type]
@@ -743,6 +923,29 @@ def finalize(core: dict[str, object], root: str, branch: str, detached: bool) ->
 
     must_read_sections = [s["section"] for s in stacks]
 
+    # Read-hint: when agent may skip full-file load (small production hunks)
+    full_file_read_paths: list[str] = []
+    patch_likely_enough: list[str] = []
+    for f in prioritized:
+        path = str(f.get("path") or "")
+        a = int(f.get("added") or 0)
+        d = int(f.get("deleted") or 0)
+        tags = set(f.get("tags") or [])
+        status = str(f.get("status") or "")
+        is_new = status.startswith("A") or "?" in status or status == "F"
+        needs_full = (
+            is_new
+            or "security_sensitive" in tags
+            or "migration" in tags
+            or (a + d) > 80
+            or a + d == 0  # rename/binary/unknown
+        )
+        if needs_full:
+            full_file_read_paths.append(path)
+        else:
+            path_enough = path
+            patch_likely_enough.append(path_enough)
+
     result = {
         "ok": core.get("ok", True) if "ok" in core else True,
         "repo_root": root,
@@ -772,10 +975,20 @@ def finalize(core: dict[str, object], root: str, branch: str, detached: bool) ->
         ],
         "prioritized_paths": [f["path"] for f in prioritized],
         "excluded_paths": [f["path"] for f in excluded],
+        "full_file_read_paths": full_file_read_paths,
+        "patch_likely_enough_paths": patch_likely_enough,
         "warnings": warnings,
-        "risk_matrix": risk_matrix_reference(),
+        "agent_hints": {
+            "skip_git_status_repeat": True,
+            "prefer_embedded_diff": True,
+            "prefer_stack_excerpts": True,
+            "parallel_file_reads": True,
+            "do_not_reload_skill_md": True,
+        },
         "files": files,
     }
+    if include_risk_matrix:
+        result["risk_matrix"] = risk_matrix_reference()
     # Merge core mode-specific fields (without duplicating heavy raw entries)
     for key in (
         "mode",
@@ -796,6 +1009,8 @@ def finalize(core: dict[str, object], root: str, branch: str, detached: bool) ->
         "commits_ahead",
         "note",
         "error",
+        "diff_patch",
+        "stack_excerpts",
     ):
         if key in core:
             result[key] = core[key]
@@ -818,6 +1033,55 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         dest="files",
         help="File path for --mode file (repeatable)",
+    )
+    p.add_argument(
+        "--with-diff",
+        action="store_true",
+        default=True,
+        help="Embed unified diff patch (default: on). Avoids a second agent git diff.",
+    )
+    p.add_argument(
+        "--no-diff",
+        action="store_true",
+        help="Do not embed unified diff patch",
+    )
+    p.add_argument(
+        "--diff-byte-cap",
+        type=int,
+        default=DEFAULT_DIFF_BYTE_CAP,
+        help=f"Max UTF-8 bytes of embedded patch (default: {DEFAULT_DIFF_BYTE_CAP})",
+    )
+    p.add_argument(
+        "--stack-excerpts",
+        action="store_true",
+        default=True,
+        help="Embed only detected tech-stack sections (default: on)",
+    )
+    p.add_argument(
+        "--no-stack-excerpts",
+        action="store_true",
+        help="Do not embed tech-stack excerpts",
+    )
+    p.add_argument(
+        "--skill-dir",
+        default="",
+        help="Skill root for resolving references/tech-stacks.md",
+    )
+    p.add_argument(
+        "--risk-matrix",
+        action="store_true",
+        help="Include full risk_matrix JSON (omit by default; weights live in SKILL.md)",
+    )
+    p.add_argument(
+        "--compact",
+        action="store_true",
+        help="Emit minified JSON (fewer tokens)",
+    )
+    p.add_argument(
+        "--pretty",
+        action="store_true",
+        default=True,
+        help="Pretty-print JSON (default)",
     )
     return p.parse_args(argv)
 
@@ -863,12 +1127,52 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         core = snapshot_files(root, args.files)
 
+    want_diff = args.with_diff and not args.no_diff
+    want_stacks = args.stack_excerpts and not args.no_stack_excerpts
+    skill_dir = args.skill_dir.strip() or str(Path(__file__).resolve().parent.parent)
+
+    if core.get("ok") is not False and core.get("has_changes") and want_diff:
+        core["diff_patch"] = collect_diff_patch(
+            root,
+            str(core.get("mode") or args.mode),
+            commit=str(core.get("commit") or args.commit or "HEAD"),
+            base=str(core.get("base") or args.base or "main"),
+            byte_cap=max(10_000, int(args.diff_byte_cap)),
+        )
+
+    # finalize first to know stacks, then excerpts
     if core.get("ok") is False:
-        print(json.dumps(finalize(core, root, branch, detached), ensure_ascii=False, indent=2))
+        snap = finalize(
+            core, root, branch, detached, include_risk_matrix=args.risk_matrix
+        )
+        indent = None if args.compact else 2
+        print(json.dumps(snap, ensure_ascii=False, indent=indent))
         return 1
 
-    snap = finalize(core, root, branch, detached)
-    print(json.dumps(snap, ensure_ascii=False, indent=2))
+    snap = finalize(
+        core, root, branch, detached, include_risk_matrix=args.risk_matrix
+    )
+
+    if want_stacks and snap.get("must_read_tech_stack_sections"):
+        excerpts = extract_stack_excerpts(
+            skill_dir,
+            list(snap.get("must_read_tech_stack_sections") or []),  # type: ignore[arg-type]
+        )
+        snap["stack_excerpts"] = excerpts
+        if excerpts.get("sections"):
+            # Agent can skip opening tech-stacks.md when excerpts are complete
+            missing = excerpts.get("missing") or []
+            snap["stack_excerpts_complete"] = not missing
+        else:
+            snap["stack_excerpts_complete"] = False
+    else:
+        snap["stack_excerpts"] = {"sections": {}, "path": None, "missing": []}
+        snap["stack_excerpts_complete"] = not bool(
+            snap.get("must_read_tech_stack_sections")
+        )
+
+    indent = None if args.compact else 2
+    print(json.dumps(snap, ensure_ascii=False, indent=indent))
     return 0
 
 

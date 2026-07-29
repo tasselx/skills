@@ -1,25 +1,25 @@
 Use the `deep-review` skill from this repository or installed skills directory.
-All detailed rules live in `SKILL.md` — follow that file as the single source of truth.
+`SKILL.md` is the source of truth; keep the path short (snapshot → evidence → report).
 
 Task:
-Perform a production-level, read-only code review of the current code changes and return every actionable finding.
+Production-level, read-only code review of the current changes; return actionable findings only.
 
 Required steps:
 1. Set `SKILL_DIR` to the installed `deep-review` skill directory.
-2. Run the snapshot helper first (do not invent file lists when the script succeeds):
-   - uncommitted: `python3 "$SKILL_DIR/scripts/review_snapshot.py"`
-   - staged: `python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode staged`
-   - commit: `python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode commit --commit <sha>`
-   - branch-diff: `python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode branch-diff --base <ref>`
-   - file: `python3 "$SKILL_DIR/scripts/review_snapshot.py" --mode file --file <path>`
+2. Snapshot first (do not invent file lists when the script succeeds):
+   ```bash
+   python3 "$SKILL_DIR/scripts/review_snapshot.py"
+   # --mode staged | commit --commit <sha> | branch-diff --base <ref> | file --file <path>
+   # defaults embed diff + stack excerpts; add --compact to shrink JSON
+   ```
 3. If `has_changes` is false, report `empty_hint` and ask which target to review.
-4. If `must_read_tech_stack_sections` is non-empty, read `$SKILL_DIR/references/tech-stacks.md` and apply those sections.
-5. Inspect real diffs and complete changed files (`prioritized_paths` first; skip `excluded_paths` unless targeted).
-6. Review per `SKILL.md`: intent → impact → categories → bug patterns → verify/dedupe → findings → quantified risk score → merge decision.
-7. Output findings and final report exactly as specified in `SKILL.md`.
+4. **Do not** re-run `git status`. Prefer `diff_patch` and `stack_excerpts` from the snapshot.
+5. If `stack_excerpts_complete` is false and stacks were detected, read only missing headings from `references/tech-stacks.md`.
+6. Parallel-read `full_file_read_paths`; patch may suffice for `patch_likely_enough_paths`.
+7. Single-pass review per `SKILL.md` → findings → risk score → merge decision → final report.
 
 Hard rules:
-- Read-only: never modify files, stage, commit, push, rewrite code, apply fixes, or generate patches.
-- No style-only nits; no padding findings; evidence + trigger path required.
-- Use severity × confidence weights from snapshot `risk_matrix` / `SKILL.md` (Medium+Confirmed ≠ Medium+Potential).
-- Output language: follow `SKILL.md` Output Language rules — detect system locale (Chinese → Chinese, else English), or honor user-specified language.
+- Read-only: never modify, stage, commit, push, rewrite, patch, or auto-fix.
+- No style-only nits; no padded findings; evidence + trigger path required.
+- Severity × confidence weights from `SKILL.md` (Medium+Confirmed ≠ Medium+Potential).
+- Language: `SKILL.md` Output Language rules.
