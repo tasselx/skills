@@ -12,222 +12,162 @@ description:
 
 # Deep Review
 
-Senior production review. Goal: decide if the change is safe to ship — not to pad findings.
+Senior production review. Ship-safety only — no padding, no style nits.
 
-**Prefer:** real defect > speculation, evidence > style, production impact > theory.
-
-**Read-only:** never modify files, commit, push, rewrite code, apply fixes, or generate patches.
-
-**Tone:** neutral and factual (“When X, Y may happen”). No condescension, no filler.
+**Prefer:** real defect > speculation, evidence > theory.  
+**Read-only:** never modify files, commit, push, rewrite, apply fixes, or generate patches.  
+**Tone:** neutral (“When X, Y may happen”).
 
 # Output Language
 
-Adapt the review output language to the environment:
+**Authoritative source: snapshot field `output_language` (`zh` | `en`).**  
+Also read `output_language_rule` and obey it. Do **not** re-guess from shell `LANG` alone — many systems keep `LANG=en_US` while the UI language is Chinese.
 
-1. **User override** — If the user explicitly specifies a language (e.g. "用中文审查", "review in English"), honor that choice.
-2. **System locale is Chinese** — If the system locale is a Chinese variant (`zh_CN`, `zh_TW`, `zh_HK`, `zh_MO`, `zh_SG`, or any `zh_*`), output in **Chinese**.
-3. **Otherwise** — output entirely in **English**.
+Resolution order used by the snapshot script:
+1. User explicit request in the chat (e.g. "用中文审查", "review in English") — overrides snapshot for this run.
+2. Env override: `DEEP_REVIEW_LANG=zh|en`
+3. Chinese POSIX locale (`zh_*` in `LANG` / `LC_*` / `LANGUAGE`)
+4. **macOS UI language** (`AppleLocale` / `AppleLanguages`) — use this when shell LANG is English
+5. Default: `en`
 
-Detect locale from the environment (e.g. `LANG`, `LC_ALL`, `LC_MESSAGES`). Prefer the first available value; match case-insensitively on a `zh` prefix (including `zh_CN.UTF-8`).
+When `output_language=zh` (or user asked for Chinese):
+- Finding titles, body, Evidence/Trigger/Fix **prose**, Summary **Why**, Limitations, Questions → **Chinese**
+- Keep in English: paths, code, git, severity tokens (`CRITICAL`…), confidence, category, merge decision, table keys (`Decision`, `Risk`, `Issues`, `Files`, `Stacks`, `Profile`)
+- Do **not** emit an English-only report.
 
-When outputting in **Chinese**:
-- Finding titles, descriptions, Evidence/Trigger/Fix prose, Review Summary **Why**, Limitations, and Questions for Author → Chinese.
-- Code identifiers, file paths, git commands, and technical tokens stay in English as-is.
-- Machine-parseable labels stay in English: severity (`CRITICAL` / `HIGH` / …), confidence (`Confirmed` / `Likely` / `Potential`), category (`Security` / …), merge decision (`APPROVE` / `REQUEST CHANGES` / …), and table field keys (`Decision`, `Risk`, `Issues`, `Files`, `Stacks`).
+When `output_language=en`:
+- All prose in English.
 
-When outputting in **English**:
-- Everything in English, including findings, summary Why, limitations, and questions.
+Kickoff/progress lines follow the same language. No mixed Chinese/English prose (except English tokens above).
 
-Kickoff / progress lines follow the same language choice. Do not mix Chinese and English prose in the same review (except the English tokens listed above).
+# Speed Contract (mandatory)
 
-# Fast Workflow (do not invent extra steps)
+Snapshot returns `review_profile` + `agent_hints.speed_contract`. **Obey them.**
 
-Minimize tool rounds. Default path is **≤3 tool batches**.
+| Profile | When (approx) | Tool batches **after** snapshot | Emit |
+|---------|----------------|----------------------------------|------|
+| **instant** | ≤5 reviewable files **and** ≤150 lines, no security/migration/large/multi-package | **0** | **oneshot** full report |
+| **standard** | ≤20 files **and** ≤800 lines | **≤1** (only if `full_file_read_paths` non-empty) | **oneshot** |
+| **deep** | large / security / migration / monorepo multi-package / else | **≤3** | stream findings |
 
-**Progressive output (required):** stream findings as you confirm them. Do **not** buffer every issue until the end.
+Hard bans (all profiles unless deep + explicitly needed):
+- No second `git status` / ad-hoc git parsing when snapshot OK
+- No re-loading this SKILL.md
+- No `references/review-depth.md` on **instant/standard**
+- No full `tech-stacks.md` when `stack_excerpts_complete`
+- No tests on instant/standard
+- No grep/caller walks on **instant**
+- No “let me explore the codebase” loops
 
-## 1. Snapshot (required first)
+**instant:** after snapshot stdout is in context, your **next message is the complete review**. Use only `diff_patch`, `file_contents.files`, `stack_excerpts`. Zero extra tools.
+
+# Fast Workflow
+
+## 1. Snapshot only (always first)
 
 ```bash
 export SKILL_DIR="/path/to/deep-review"
-python3 "$SKILL_DIR/scripts/review_snapshot.py"
-# modes:
-# --mode staged
-# --mode commit --commit HEAD
-# --mode branch-diff --base main
-# --mode file --file path/a.py
-# optional: --compact  --no-diff  --risk-matrix
+python3 "$SKILL_DIR/scripts/review_snapshot.py" --compact
+# --mode staged | commit --commit <sha> | branch-diff --base <ref> | file --file <path>
 ```
 
-Trust snapshot. **Do not** re-run `git status` after a successful snapshot.
+If `has_changes` is false → print `empty_hint`, ask target, stop.
 
-Key fields: `has_changes`, `empty_hint`, `large_diff`, `change_types`, `detected_stacks`,
-`must_read_tech_stack_sections`, `stack_excerpts`, `stack_excerpts_complete`,
-`diff_patch`, `package_roots`, `mixed_changes_suspected`, `prioritized_paths`,
-`excluded_paths`, `full_file_read_paths`, `patch_likely_enough_paths`, `files`, `agent_hints`.
+Trust: `review_profile`, `agent_hints`, `output_language`, `output_language_rule`,
+`diff_patch`, `file_contents`, `stack_excerpts`,
+`prioritized_paths`, `excluded_paths`, `full_file_read_paths`, `change_types`.
 
-If `has_changes` is false → print `empty_hint` and ask for target. Stop.
+## 2. Branch on profile
 
-## 2. Load evidence (parallel, one batch)
+### instant (default for small diffs)
 
-| Source | Rule |
-|--------|------|
-| `diff_patch.patch` | Use when `diff_patch.included` and not needing a wider range. If `truncated`, run **one** mode-specific `git diff` / `git show` only for missing paths. |
-| `stack_excerpts.sections` | Apply when present. If `stack_excerpts_complete` is true, **do not** open full `tech-stacks.md`. If incomplete/missing, read only the missing headings from `references/tech-stacks.md` (not the whole file). |
-| Files | Read `full_file_read_paths` first (parallel). Use patch alone for `patch_likely_enough_paths` unless callers/contracts are unclear. Skip `excluded_paths` unless they are the target. Cap full-file reads on large diffs: security + migrations + top risk production files first. |
-| Context | Grep/open callers **only** for changed public APIs, shared types, or suspected breakages — not blanket repo walks. |
+1. Read snapshot fields in-memory (no tools).
+2. Review `diff_patch.patch` + any `file_contents.files`.
+3. Apply `stack_excerpts.sections` lightly (skip if change is docs/test-only).
+4. **Immediately write full report** (findings if any + Summary).  
+   Keep focus: correctness / obvious reliability / security only. Skip architecture-for-its-own-sake, observability theater, low nits.
 
-Never reload this `SKILL.md`. Load `references/review-depth.md` only for large/high-risk changes or calibration disputes.
+### standard
 
-After this batch: print a one-line kickoff only, e.g.  
-`Reviewing N files (mode=…, stacks=…). Streaming findings…`
+1. If `full_file_read_paths` empty → same as instant oneshot.  
+2. Else **one** parallel Read batch for those paths only, then oneshot report.
+3. Categories: correctness, reliability, security, regression; others only if clearly relevant.
 
-Do **not** print the final Summary yet.
+### deep
 
-## 3. Analyze and emit (stream)
+1. Parallel load remaining `full_file_read_paths`; optional targeted caller grep for public API changes.
+2. Stream each confirmed finding as you go; cap ≤3 tool batches after snapshot.
+3. `review-depth.md` only if still blocked on calibration.
 
-Work intent → impact → defects. Prefer high-risk paths first (security, migrations, production).
+# Scope
 
-**Emit rule:** once a finding passes the gate (location + trigger + evidence + not a dupe), **immediately print its full detail block** in the user-visible reply. Then continue scanning.
-
-1. **Intent** — goal, approach, expected vs actual; use `change_types` (+ commit subject).
-2. **Impact** — callers/contracts/data flow as needed; monorepo → `package_roots`; mixed → note group in the finding body.
-3. **Defect scan** (only fitting categories): correctness, reliability, security, performance, architecture (if real risk), testing, regression, observability, deployment; plus stack excerpts and bug patterns (state/async/errors/data/resources/trust).
-4. **Gate → print** — each confirmed finding gets the next monotonic `#` and is written out **before** more tool calls when possible. Drop weak/speculative items silently (do not announce drops).
-5. **Close out** — after the scan (or when large-diff batch ends), print index table (if ≥2), then Review Summary, then Limitations/Questions if any.
-
-Between findings: optional one short status line is OK (`…still checking auth callers`). No long preambles, no “full report coming next”.
-
-If a later finding supersedes an earlier one (same root cause): print a one-line correction  
-`~~#N~~ superseded by #M (same root cause)`  
-and only count `#M` in the Summary score.
-
-## 4. Tool interleaving
-
-You **may** emit text findings and then call more tools (read callers, etc.). Never hold back a full Finding Detail until the entire review is done. Summary tables are the only block that must wait until the end.
-
-# Scope Cheatsheet
-
-**Exclude by default:** generated, lockfiles, binaries (`excluded_paths`).
-
-**Prioritize:** business logic, production code, public interfaces, security-sensitive, persistence/network, migrations.
-
-**Large diff** (`large_diff`): say so; review `prioritized_paths` / security first; partial report OK; list unscanned paths under Limitations.
-
-**Mixed changes:** flag, group findings, still finish review.
-
-**Special:** generated output without generator-config change → skip; docs-only → accuracy/completeness; test-only → test correctness/isolation; binaries → size/type/metadata only.
+**Skip:** `excluded_paths` (generated/lock/binary) unless targeted.  
+**Prioritize:** production logic, public APIs, security, persistence/network, migrations.  
+**Large:** partial OK; list unread paths in Limitations.  
+**Mixed:** group findings, finish anyway.
 
 # Finding Rules
 
-Every finding needs: evidence (file + line + behavior), trigger path (who/what, conditions, likelihood), severity, confidence.
-
-**Confidence:** Confirmed | Likely | Potential  
-**Severity:** Critical (outage/data loss/exploitable) · High (common-path wrongness/reliability) · Medium (real but limited) · Low (only if useful)
-
-False positives to avoid: style/preference, no execution path, uncommon edges without impact.
-
-Sort: severity → confidence → impact → probability → recovery difficulty.
+Need: `` `path:line` `` evidence, realistic trigger, severity, confidence.  
+Confidence: Confirmed | Likely | Potential  
+Severity: Critical · High · Medium · Low (Low only if useful)  
+Drop style/preference/no-path/weak items. Dedupe by root cause.  
+Sort display order: severity → confidence → impact.
 
 # Output Format
 
-Render as normal markdown (not one giant code fence). Optimize for **narrow CLI** and scanability.
+Normal markdown. Markers: 🔴 Critical · 🟠 High · 🟡 Medium · 🟢 Low  
+Decisions: ✅ APPROVE · ⚠️ APPROVE WITH COMMENTS · 🔧 REQUEST CHANGES · 🛑 BLOCK MERGE
 
-Markers: Critical 🔴 · High 🟠 · Medium 🟡 · Low 🟢  
-Decision badges: ✅ APPROVE · ⚠️ APPROVE WITH COMMENTS · 🔧 REQUEST CHANGES · 🛑 BLOCK MERGE
+## oneshot (instant/standard)
 
-## Order (streaming)
+Single message:
 
-**While reviewing (live):**
-1. One-line kickoff after snapshot/evidence load.
-2. Each finding **detail block as soon as it is confirmed** (numbered `#1`, `#2`, …). Prefer emitting Critical/High before Low when several are ready.
-3. Optional short progress lines between batches.
+1. Optional one-line header: `profile=instant · N files · M lines`
+2. Finding details `#1…` (if any) — discovery or severity order
+3. Findings index table only if ≥2
+4. Review Summary
+5. Limitations / Questions — **only if non-empty**
 
-**At the end only:**
-4. **Finding index table** if total findings ≥ 2 (rebuild from emitted items; severity sort for the table is OK even if emit order differed).
-5. **Review Summary** (Decision / Risk / Issues / Files / Stacks / Why).
-6. **Limitations** / **Questions for Author** if non-empty.
+## stream (deep only)
 
-No findings → no detail blocks; end with Summary `✅ No issues found.`
+Emit each finding when confirmed; end with index (≥2) + Summary + optional Limitations/Questions.
 
-Do **not** wait to print details until the Summary is ready. The index table and Summary are the closing section, not the first place findings appear.
-
-## Finding index (end, when ≥2 findings)
-
-Print **after** all detail blocks, immediately before Review Summary:
-
-```markdown
-## Findings index
-
-| # | Sev | Conf | Loc | Title |
-|---|-----|------|-----|-------|
-| 1 | 🔴 C | Confirmed | `a.py:42` | SQL injection in search |
-| 2 | 🟠 H | Likely | `b.go:28` | Off-by-one skips page 0 |
-```
-
-Sev abbrev in table only: `C` Critical · `H` High · `M` Medium · `L` Low.  
-Sort rows by severity → confidence (user scan), even if live emit order was discovery order.  
-One finding → skip the index table.
-
-## Finding detail
+## Finding detail (compact)
 
 ```markdown
 ### 1. 🔴 [CRITICAL] Short title
 
-| | |
-|---|---|
-| **Confidence** | Confirmed |
-| **Category** | Security |
-| **Location** | `path/to/file.ext:line` |
+**Confidence:** Confirmed · **Category:** Security · **Location:** `a.py:42`
 
-When `query` is attacker-controlled, the handler builds SQL via string concat and executes it.
+When attacker-controlled `query` is concatenated into SQL and executed.
 
-- **Evidence:** `search.py:42` uses `f"...{query}..."` in `cursor.execute(...)`.
-- **Trigger:** any unauthenticated `GET /search?q=`; likelihood High.
-- **Fix:** parameterized query, e.g. `cursor.execute("... LIKE %s", (f"%{query}%",))`.
+- **Evidence:** `a.py:42` `f"…{query}…"` → `cursor.execute`
+- **Trigger:** `GET /search?q=`; likelihood High
+- **Fix:** parameterized query (`%s` placeholder)
 ```
 
-Rules:
-- Keep title ≤12 words; put mechanism in body.
-- Evidence must cite `` `path:line` ``.
-- Fix is actionable; snippet ≤8 lines when helpful.
-- Do **not** wrap findings in `>` blockquotes (breaks nest/scan in CLI).
-- Do **not** dump full files or long patches in Fix.
-- Related root cause → one finding, mention sibling locations in Evidence.
+Rules: title ≤12 words; Fix ≤8 lines; no blockquotes; no full-file dumps.
 
-## Review Summary (always)
+## Summary (always)
 
 ```markdown
 ---
-
 ## Review Summary
 
 | Field | Value |
 |-------|-------|
 | **Decision** | 🔧 REQUEST CHANGES |
-| **Risk** | High (raw 55; band: High+Confirmed) |
-| **Issues** | 🔴 0 · 🟠 1 · 🟡 2 · 🟢 0 |
-| **Files** | `a.py`, `b.go` (+N more if long) |
-| **Stacks** | Python, Backend — or `none` |
+| **Risk** | High (raw 55; High+Confirmed) |
+| **Issues** | 🔴 0 · 🟠 1 · 🟡 0 · 🟢 0 |
+| **Files** | `a.py` |
+| **Stacks** | Python |
+| **Profile** | instant |
 
-**Why:** one or two sentences citing the highest finding(s) and score rule.
+**Why:** one or two sentences.
 ```
 
-Optional second line under Issues when zero: `✅ No issues found.`
-
-Skip Severity Chart ASCII bars and Risk Meter ASCII gauges — the summary table replaces both.
-
-## Limitations / Questions
-
-```markdown
-## Review Limitations
-- …
-
-## Questions for Author
-- …
-```
-
-Omit a section entirely when empty. No placeholder verbiage.
+Zero issues → Issues row or line `✅ No issues found.`
 
 # Risk Score & Merge
 
@@ -238,34 +178,27 @@ Omit a section entirely when empty. No placeholder verbiage.
 | Medium | 20 | 14 | 8 |
 | Low | 4 | 3 | 1 |
 
-Raw score = sum after dedupe.  
-Root-cause cluster (3+): highest full weight, extras 25%.  
-All-Potential → cap risk at Medium.  
-Medium+Potential alone with score < 15 → Low.
+Raw = sum after dedupe. Cluster 3+: top full, extras 25%. All-Potential cap Medium. Medium+Potential sole & score<15 → Low.
 
 | Risk | Condition |
 |------|-----------|
-| Very High | score ≥ 80 **or** Critical+Confirmed/Likely |
-| High | 45–79 **or** Critical+Potential **or** High+Confirmed/Likely |
-| Medium | 15–44 **or** Medium+Confirmed/Likely **or** 5+ Low |
-| Low | otherwise |
+| Very High | ≥80 or Critical+Confirmed/Likely |
+| High | 45–79 or Critical+Potential or High+Confirmed/Likely |
+| Medium | 15–44 or Medium+Confirmed/Likely or 5+ Low |
+| Low | else |
 
 | Decision | When |
 |----------|------|
-| **BLOCK MERGE** | Very High, or Critical+Confirmed |
-| **REQUEST CHANGES** | High, or any Critical, or High+Confirmed |
-| **APPROVE WITH COMMENTS** | Medium, or only High+Potential / non-blocking Medium |
-| **APPROVE** | Low, no Critical/High |
+| BLOCK MERGE | Very High or Critical+Confirmed |
+| REQUEST CHANGES | High or any Critical or High+Confirmed |
+| APPROVE WITH COMMENTS | Medium or High+Potential only |
+| APPROVE | Low, no Critical/High |
 
-# Incomplete Context
+# Incomplete context
 
-State the gap → impact → lower confidence if needed → list in Limitations → never invent unread behavior.
+Gap → impact → lower confidence → Limitations. Never invent unread code.
 
-# Tests (optional evidence)
+# Depth reference
 
-Run targeted tests only for auth/payments/migrations/concurrency, confidence flip, or user request. No full suite by default. Failures may raise confidence; they alone do not force Critical.
-
-# Depth Reference
-
-Optional: [`references/review-depth.md`](./references/review-depth.md) for extended category prompts, examples, and edge-case handling.  
-Stack checklists: embedded `stack_excerpts` or [`references/tech-stacks.md`](./references/tech-stacks.md) by heading only.
+Only **deep** profile may open [`references/review-depth.md`](./references/review-depth.md).  
+Stacks: `stack_excerpts` first; headings from [`references/tech-stacks.md`](./references/tech-stacks.md) only if incomplete.

@@ -10,6 +10,7 @@ Run with:
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -275,6 +276,8 @@ class TestFinalize(unittest.TestCase):
         self.assertNotIn("risk_matrix", out)
         self.assertIn("full_file_read_paths", out)
         self.assertIn("agent_hints", out)
+        self.assertEqual(out["review_profile"], "deep")
+        self.assertEqual(out["agent_hints"]["review_profile"], "deep")
 
     def test_risk_matrix_opt_in(self):
         core = {
@@ -296,6 +299,57 @@ class TestFinalize(unittest.TestCase):
         out = rs.finalize(core, "/tmp/repo", "main", False, include_risk_matrix=True)
         self.assertIn("risk_matrix", out)
 
+    def test_instant_profile_small_change(self):
+        core = {
+            "mode": "uncommitted",
+            "paths": ["a.py"],
+            "entries": [{"code": "M", "path": "a.py"}],
+            "files": [
+                {
+                    "path": "a.py",
+                    "status": "M",
+                    "added": 10,
+                    "deleted": 2,
+                    "tags": ["production_code"],
+                    "exclude_by_default": False,
+                }
+            ],
+            "added_lines": 10,
+            "deleted_lines": 2,
+            "has_changes": True,
+        }
+        out = rs.finalize(core, "/tmp/repo", "main", False)
+        self.assertEqual(out["review_profile"], "instant")
+        self.assertEqual(out["agent_hints"]["max_tool_batches_after_snapshot"], 0)
+        self.assertEqual(out["agent_hints"]["emit_mode"], "oneshot")
+        self.assertTrue(out["agent_hints"]["forbid_extra_reads"])
+
+
+class TestClassifyReviewProfile(unittest.TestCase):
+    def test_security_forces_deep(self):
+        profile = rs.classify_review_profile(
+            reviewable_count=1,
+            total_lines=10,
+            large_diff=False,
+            security_paths=["auth.py"],
+            has_migration=False,
+            package_count=1,
+            change_types=["feature_or_logic"],
+        )
+        self.assertEqual(profile, "deep")
+
+    def test_standard_band(self):
+        profile = rs.classify_review_profile(
+            reviewable_count=10,
+            total_lines=400,
+            large_diff=False,
+            security_paths=[],
+            has_migration=False,
+            package_count=1,
+            change_types=["feature_or_logic"],
+        )
+        self.assertEqual(profile, "standard")
+
 
 class TestExtractStackExcerpts(unittest.TestCase):
     def test_extracts_python_only(self):
@@ -304,7 +358,6 @@ class TestExtractStackExcerpts(unittest.TestCase):
         self.assertIn("Python", out["sections"])
         self.assertTrue(out["sections"]["Python"].startswith("## "))
         self.assertEqual(out["missing"], [])
-        # Should not pull unrelated sections
         self.assertNotIn("Go", out["sections"])
 
     def test_empty_titles(self):
@@ -322,6 +375,40 @@ class TestRunGitMany(unittest.TestCase):
         )
         self.assertEqual(set(results), {"a", "b"})
         self.assertEqual(results["a"][1].strip(), "true")
+
+
+class TestLanguageDetection(unittest.TestCase):
+    def test_chinese_tag(self):
+        self.assertTrue(rs.is_chinese_locale_tag("zh_CN.UTF-8"))
+        self.assertTrue(rs.is_chinese_locale_tag("zh-Hans-CN"))
+        self.assertTrue(rs.is_chinese_locale_tag("zh"))
+        self.assertFalse(rs.is_chinese_locale_tag("en_US.UTF-8"))
+        self.assertFalse(rs.is_chinese_locale_tag("C"))
+
+    def test_env_override_zh(self):
+        old = os.environ.get("DEEP_REVIEW_LANG")
+        os.environ["DEEP_REVIEW_LANG"] = "zh"
+        try:
+            info = rs.detect_output_language()
+            self.assertEqual(info["language"], "zh")
+            self.assertEqual(info["source"], "DEEP_REVIEW_LANG")
+        finally:
+            if old is None:
+                os.environ.pop("DEEP_REVIEW_LANG", None)
+            else:
+                os.environ["DEEP_REVIEW_LANG"] = old
+
+    def test_env_override_en(self):
+        old = os.environ.get("DEEP_REVIEW_LANG")
+        os.environ["DEEP_REVIEW_LANG"] = "en"
+        try:
+            info = rs.detect_output_language()
+            self.assertEqual(info["language"], "en")
+        finally:
+            if old is None:
+                os.environ.pop("DEEP_REVIEW_LANG", None)
+            else:
+                os.environ["DEEP_REVIEW_LANG"] = old
 
 
 if __name__ == "__main__":

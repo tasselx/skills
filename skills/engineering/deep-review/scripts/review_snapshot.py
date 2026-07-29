@@ -132,6 +132,13 @@ PACKAGE_ROOT_RE = re.compile(
 LARGE_FILE_THRESHOLD = 50
 LARGE_LINE_THRESHOLD = 2000
 DEFAULT_DIFF_BYTE_CAP = 200_000
+# Instant path: snapshot-only review (no extra agent file reads).
+INSTANT_MAX_FILES = 5
+INSTANT_MAX_LINES = 150
+INSTANT_FILE_BYTE_CAP = 48_000
+INSTANT_TOTAL_EMBED_CAP = 160_000
+STANDARD_MAX_FILES = 20
+STANDARD_MAX_LINES = 800
 
 
 def normalize_git_output(text: str) -> str:
@@ -864,6 +871,211 @@ def snapshot_files(root: str, file_paths: list[str]) -> dict[str, object]:
     }
 
 
+def is_chinese_locale_tag(value: str) -> bool:
+    """True if a locale/language tag denotes Chinese."""
+    s = (value or "").strip().replace("-", "_").lower()
+    if not s or s in {"c", "posix"}:
+        return False
+    # zh, zh_cn, zh_hans_cn, zh.utf-8, chinese
+    primary = s.split(".")[0].split("@")[0]
+    if primary == "zh" or primary.startswith("zh_"):
+        return True
+    if "chinese" in s or primary in {"chn", "cn"}:
+        return True
+    return False
+
+
+def _macos_language_signals() -> list[str]:
+    """Read macOS global AppleLocale / AppleLanguages (user-facing system language)."""
+    if sys.platform != "darwin":
+        return []
+    signals: list[str] = []
+    for args in (
+        ["defaults", "read", "-g", "AppleLocale"],
+        ["defaults", "read", "-g", "AppleLanguages"],
+    ):
+        try:
+            proc = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                timeout=2,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode != 0 or not proc.stdout.strip():
+            continue
+        text = proc.stdout.strip()
+        # AppleLanguages is a plist-like list: ( "zh-Hans-CN", "en-CN", ... )
+        for raw in re.findall(r'"([^"]+)"', text):
+            signals.append(raw)
+        if not signals and not text.startswith("("):
+            signals.append(text.splitlines()[0].strip())
+    return signals
+
+
+def detect_output_language() -> dict[str, object]:
+    """Decide review prose language. Prefer real UI language over shell LANG.
+
+    Many agent/CLI environments export ``LANG=en_US.UTF-8`` while the user's
+    OS UI is Chinese (especially macOS). Agents must follow ``language`` here.
+    """
+    signals: dict[str, object] = {}
+
+    # 1) Explicit override for automation
+    for key in ("DEEP_REVIEW_LANG", "REVIEW_OUTPUT_LANG", "OUTPUT_LANG"):
+        raw = (os.environ.get(key) or "").strip()
+        if not raw:
+            continue
+        signals[key] = raw
+        low = raw.lower().replace("-", "_")
+        if low in {"zh", "zh_cn", "zh_tw", "chinese", "cn", "中文"}:
+            return {
+                "language": "zh",
+                "source": key,
+                "signals": signals,
+            }
+        if low in {"en", "en_us", "en_gb", "english"}:
+            return {
+                "language": "en",
+                "source": key,
+                "signals": signals,
+            }
+
+    # 2) POSIX locale env — only win when they clearly say Chinese
+    env_keys = (
+        "LC_ALL",
+        "LC_MESSAGES",
+        "LANG",
+        "LANGUAGE",
+    )
+    env_values = []
+    for key in env_keys:
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            signals[key] = val
+            env_values.append(val)
+            # LANGUAGE can be colon-separated: zh_CN:en_US
+            for part in re.split(r"[:;,\s]+", val):
+                if is_chinese_locale_tag(part):
+                    return {
+                        "language": "zh",
+                        "source": key,
+                        "signals": signals,
+                    }
+
+    # 3) macOS UI language (critical: often Chinese while LANG stays en_US)
+    mac_signals = _macos_language_signals()
+    if mac_signals:
+        signals["macos_languages"] = mac_signals
+        # Prefer first language in AppleLanguages order
+        for tag in mac_signals:
+            if is_chinese_locale_tag(tag):
+                return {
+                    "language": "zh",
+                    "source": "macos_apple_languages",
+                    "signals": signals,
+                }
+
+    # 4) Common Chinese user markers in shell/env (weak)
+    for key in ("TERMINAL_LANGUAGE", "USER_LANG", "UI_LANG"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            signals[key] = val
+            if is_chinese_locale_tag(val):
+                return {
+                    "language": "zh",
+                    "source": key,
+                    "signals": signals,
+                }
+
+    return {
+        "language": "en",
+        "source": "default",
+        "signals": signals,
+    }
+
+
+def embed_workspace_files(
+    root: str,
+    paths: list[str],
+    *,
+    per_file_cap: int = INSTANT_FILE_BYTE_CAP,
+    total_cap: int = INSTANT_TOTAL_EMBED_CAP,
+) -> dict[str, object]:
+    """Embed small text file contents so the agent needs no extra Read calls."""
+    embedded: dict[str, str] = {}
+    skipped: list[dict[str, object]] = []
+    total = 0
+    for path in paths:
+        if not path or path in embedded:
+            continue
+        abs_path = Path(root) / path
+        if not abs_path.is_file():
+            skipped.append({"path": path, "reason": "missing"})
+            continue
+        try:
+            raw = abs_path.read_bytes()
+        except OSError as exc:
+            skipped.append({"path": path, "reason": str(exc)})
+            continue
+        if b"\x00" in raw[:8192]:
+            skipped.append({"path": path, "reason": "binary"})
+            continue
+        if len(raw) > per_file_cap:
+            skipped.append(
+                {"path": path, "reason": "per_file_cap", "bytes": len(raw)}
+            )
+            continue
+        if total + len(raw) > total_cap:
+            skipped.append(
+                {"path": path, "reason": "total_cap", "bytes": len(raw)}
+            )
+            continue
+        text = raw.decode("utf-8", errors="replace")
+        embedded[path] = text
+        total += len(raw)
+    return {
+        "files": embedded,
+        "embedded_count": len(embedded),
+        "embedded_bytes": total,
+        "skipped": skipped,
+        "complete": len(skipped) == 0,
+    }
+
+
+def classify_review_profile(
+    *,
+    reviewable_count: int,
+    total_lines: int,
+    large_diff: bool,
+    security_paths: list[object],
+    has_migration: bool,
+    package_count: int,
+    change_types: list[str],
+) -> str:
+    """Return instant | standard | deep."""
+    if large_diff or security_paths or has_migration or package_count > 1:
+        return "deep"
+    risky_types = {
+        "security_change",
+        "migration",
+        "dependency_update",
+    }
+    if any(t in risky_types for t in change_types):
+        return "deep"
+    if reviewable_count <= INSTANT_MAX_FILES and total_lines <= INSTANT_MAX_LINES:
+        return "instant"
+    if (
+        reviewable_count <= STANDARD_MAX_FILES
+        and total_lines <= STANDARD_MAX_LINES
+    ):
+        return "standard"
+    return "deep"
+
+
 def finalize(
     core: dict[str, object],
     root: str,
@@ -923,7 +1135,11 @@ def finalize(
 
     must_read_sections = [s["section"] for s in stacks]
 
-    # Read-hint: when agent may skip full-file load (small production hunks)
+    security_paths = [
+        f["path"] for f in files if "security_sensitive" in (f.get("tags") or [])
+    ]
+    has_migration = any("migration" in (f.get("tags") or []) for f in files)
+
     full_file_read_paths: list[str] = []
     patch_likely_enough: list[str] = []
     for f in prioritized:
@@ -938,23 +1154,126 @@ def finalize(
             or "security_sensitive" in tags
             or "migration" in tags
             or (a + d) > 80
-            or a + d == 0  # rename/binary/unknown
+            or a + d == 0
         )
         if needs_full:
             full_file_read_paths.append(path)
         else:
-            path_enough = path
-            patch_likely_enough.append(path_enough)
+            patch_likely_enough.append(path)
+
+    profile = classify_review_profile(
+        reviewable_count=len(reviewable),
+        total_lines=total_lines,
+        large_diff=large_diff,
+        security_paths=security_paths,
+        has_migration=has_migration,
+        package_count=len(packages),
+        change_types=change_types,
+    )
+
+    embed_candidates: list[str] = []
+    if profile == "instant":
+        embed_candidates = [str(f["path"]) for f in reviewable if f.get("path")]
+    elif profile == "standard":
+        embed_candidates = list(full_file_read_paths)
+
+    file_contents: dict[str, object] = {
+        "files": {},
+        "embedded_count": 0,
+        "embedded_bytes": 0,
+        "skipped": [],
+        "complete": True,
+    }
+    if embed_candidates:
+        file_contents = embed_workspace_files(root, embed_candidates)
+        embedded_set = set((file_contents.get("files") or {}).keys())  # type: ignore[union-attr]
+        full_file_read_paths = [
+            p for p in full_file_read_paths if p not in embedded_set
+        ]
+        if profile == "instant":
+            if file_contents.get("complete"):
+                full_file_read_paths = []
+            patch_likely_enough = [
+                str(f["path"])
+                for f in reviewable
+                if f.get("path") and str(f["path"]) not in embedded_set
+            ]
+
+    if profile == "instant":
+        agent_hints = {
+            "review_profile": "instant",
+            "max_tool_batches_after_snapshot": 0,
+            "forbid_extra_reads": True,
+            "forbid_grep": True,
+            "forbid_tests": True,
+            "emit_mode": "oneshot",
+            "skip_git_status_repeat": True,
+            "prefer_embedded_diff": True,
+            "prefer_stack_excerpts": True,
+            "use_file_contents": True,
+            "do_not_reload_skill_md": True,
+            "do_not_load_review_depth": True,
+            "speed_contract": (
+                "After this snapshot JSON, write the full review immediately "
+                "with ZERO additional tool calls. Use diff_patch + file_contents "
+                "+ stack_excerpts only."
+            ),
+        }
+    elif profile == "standard":
+        agent_hints = {
+            "review_profile": "standard",
+            "max_tool_batches_after_snapshot": 1,
+            "forbid_extra_reads": False,
+            "forbid_grep": False,
+            "forbid_tests": True,
+            "emit_mode": "oneshot",
+            "skip_git_status_repeat": True,
+            "prefer_embedded_diff": True,
+            "prefer_stack_excerpts": True,
+            "use_file_contents": True,
+            "parallel_file_reads": True,
+            "do_not_reload_skill_md": True,
+            "do_not_load_review_depth": True,
+            "speed_contract": (
+                "At most ONE tool batch after snapshot (parallel reads only if "
+                "full_file_read_paths non-empty). Then oneshot full report."
+            ),
+        }
+    else:
+        agent_hints = {
+            "review_profile": "deep",
+            "max_tool_batches_after_snapshot": 3,
+            "forbid_extra_reads": False,
+            "forbid_grep": False,
+            "forbid_tests": False,
+            "emit_mode": "stream",
+            "skip_git_status_repeat": True,
+            "prefer_embedded_diff": True,
+            "prefer_stack_excerpts": True,
+            "parallel_file_reads": True,
+            "do_not_reload_skill_md": True,
+            "do_not_load_review_depth": False,
+            "speed_contract": (
+                "Stream findings as confirmed. Cap extra tool batches at 3."
+            ),
+        }
 
     result = {
         "ok": core.get("ok", True) if "ok" in core else True,
         "repo_root": root,
         "branch": branch,
         "detached_head": detached,
+        "review_profile": profile,
         "large_diff": large_diff,
         "large_diff_thresholds": {
             "files": LARGE_FILE_THRESHOLD,
             "lines": LARGE_LINE_THRESHOLD,
+        },
+        "profile_thresholds": {
+            "instant_max_files": INSTANT_MAX_FILES,
+            "instant_max_lines": INSTANT_MAX_LINES,
+            "standard_max_files": STANDARD_MAX_FILES,
+            "standard_max_lines": STANDARD_MAX_LINES,
         },
         "changed_files": changed_files,
         "reviewable_files": len(reviewable),
@@ -970,23 +1289,43 @@ def finalize(
         "package_roots": packages,
         "top_level_groups": groups,
         "mixed_changes_suspected": mixed,
-        "security_sensitive_paths": [
-            f["path"] for f in files if "security_sensitive" in (f.get("tags") or [])
-        ],
+        "security_sensitive_paths": security_paths,
         "prioritized_paths": [f["path"] for f in prioritized],
         "excluded_paths": [f["path"] for f in excluded],
         "full_file_read_paths": full_file_read_paths,
         "patch_likely_enough_paths": patch_likely_enough,
+        "file_contents": file_contents,
         "warnings": warnings,
-        "agent_hints": {
-            "skip_git_status_repeat": True,
-            "prefer_embedded_diff": True,
-            "prefer_stack_excerpts": True,
-            "parallel_file_reads": True,
-            "do_not_reload_skill_md": True,
-        },
+        "locale_env": (
+            os.environ.get("LC_ALL")
+            or os.environ.get("LC_MESSAGES")
+            or os.environ.get("LANG")
+            or ""
+        ),
+        "agent_hints": agent_hints,
         "files": files,
     }
+    lang_info = detect_output_language()
+    result["output_language"] = lang_info["language"]
+    result["output_language_source"] = lang_info["source"]
+    result["output_language_signals"] = lang_info["signals"]
+    # Hard requirement string for agents that ignore prose rules.
+    if lang_info["language"] == "zh":
+        result["output_language_rule"] = (
+            "REQUIRED: Write ALL review prose in Chinese (简体中文). "
+            "Keep severity/confidence/category/decision tokens and code/paths in English. "
+            "Do not write the report in English."
+        )
+        agent_hints["output_language"] = "zh"
+        agent_hints["must_write_chinese"] = True
+    else:
+        result["output_language_rule"] = (
+            "REQUIRED: Write ALL review prose in English. "
+            "Do not switch to another language unless the user explicitly asked."
+        )
+        agent_hints["output_language"] = "en"
+        agent_hints["must_write_chinese"] = False
+    result["agent_hints"] = agent_hints
     if include_risk_matrix:
         result["risk_matrix"] = risk_matrix_reference()
     # Merge core mode-specific fields (without duplicating heavy raw entries)

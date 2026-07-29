@@ -1,26 +1,26 @@
-Use the `deep-review` skill from this repository or installed skills directory.
-`SKILL.md` is the source of truth; keep the path short (snapshot → evidence → report).
+Use the `deep-review` skill. `SKILL.md` is source of truth.
 
-Task:
-Production-level, read-only code review of the current changes; return actionable findings only.
+Task: production-level **read-only** review of current changes; actionable findings only.
 
-Required steps:
-1. Set `SKILL_DIR` to the installed `deep-review` skill directory.
-2. Snapshot first (do not invent file lists when the script succeeds):
+## Steps (keep short)
+
+1. `SKILL_DIR` = installed `deep-review` directory.
+2. **One** snapshot (prefer compact):
    ```bash
-   python3 "$SKILL_DIR/scripts/review_snapshot.py"
-   # --mode staged | commit --commit <sha> | branch-diff --base <ref> | file --file <path>
-   # defaults embed diff + stack excerpts; add --compact to shrink JSON
+   python3 "$SKILL_DIR/scripts/review_snapshot.py" --compact
    ```
-3. If `has_changes` is false, report `empty_hint` and ask which target to review.
-4. **Do not** re-run `git status`. Prefer `diff_patch` and `stack_excerpts` from the snapshot.
-5. If `stack_excerpts_complete` is false and stacks were detected, read only missing headings from `references/tech-stacks.md`.
-6. Parallel-read `full_file_read_paths`; patch may suffice for `patch_likely_enough_paths`.
-7. Stream findings: print each confirmed finding detail immediately (do not buffer until the end). Prefer security/high-risk paths first.
-8. Close with: Findings index (if ≥2) → Review Summary table → Limitations/Questions only if needed.
+   Modes: `--mode staged` | `commit --commit <sha>` | `branch-diff --base <ref>` | `file --file <path>`
+3. If `has_changes` false → `empty_hint` + ask target.
+4. Obey `output_language` / `output_language_rule` from snapshot (or user chat override). If `zh`, write the **whole** review in Chinese prose — do not default to English because `LANG=en_US`.
+5. Read `review_profile` + `agent_hints.speed_contract` and **obey**:
+   - **instant** → **zero** further tools; review from `diff_patch` + `file_contents` + `stack_excerpts`; **oneshot** full report in the next message.
+   - **standard** → ≤1 parallel read batch only if `full_file_read_paths` non-empty; then oneshot.
+   - **deep** → ≤3 tool batches; stream findings; then Summary.
+6. Never repeat `git status`. Never load `review-depth.md` on instant/standard.
 
-Hard rules:
-- Read-only: never modify, stage, commit, push, rewrite, patch, or auto-fix.
-- No style-only nits; no padded findings; evidence + trigger path required.
-- Severity × confidence weights from `SKILL.md` (Medium+Confirmed ≠ Medium+Potential).
-- Language: follow `SKILL.md` **Output Language** — user override, else Chinese when system locale is `zh_*`, else English.
+## Hard rules
+
+- Read-only: no modify/stage/commit/push/fix/patch.
+- No style nits; no padded findings; evidence + trigger required.
+- Weights/decision: `SKILL.md` Risk Score.
+- Language: follow snapshot `output_language` (`zh`→中文正文, `en`→English). User chat override wins. Never trust shell `LANG` alone.
