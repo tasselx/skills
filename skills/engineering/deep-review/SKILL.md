@@ -469,14 +469,14 @@ Always put Critical + Confirmed first.
 
 # Finding Output Format
 
-For every issue, use this exact format:
+For every issue, use this exact format. The colored blockquote bar gives instant visual scanning:
 
 ```text
-### [SEVERITY] Short title
-
-**Confidence:** Confirmed | Likely | Potential
-**Location:** `path/to/file.ext:line` (or line range)
-**Category:** Correctness | Reliability | Security | Performance | Architecture | Testing | Regression | Observability | Deployment | Maintainability
+> ### <MARKER> [SEVERITY] Short title
+>
+> **Confidence:** Confirmed | Likely | Potential  
+> **Location:** `path/to/file.ext:line` (or line range)  
+> **Category:** Correctness | Reliability | Security | Performance | Architecture | Testing | Regression | Observability | Deployment | Maintainability
 
 Description of the issue, what can go wrong, and the context needed to understand it.
 
@@ -487,26 +487,26 @@ Description of the issue, what can go wrong, and the context needed to understan
 
 ## Severity Color Markers
 
-Use a colored emoji marker at the start of each finding heading so reviewers can
+Use a colored emoji marker and blockquote bar at the start of each finding so reviewers can
 visually scan severity at a glance:
 
-| Severity | Marker | Meaning |
-|----------|--------|---------|
-| Critical | :red_circle: `[CRITICAL]` | Must fix before merge |
-| High | :orange_circle: `[HIGH]` | Should fix before release |
-| Medium | :yellow_circle: `[MEDIUM]` | Important improvement |
-| Low | :green_circle: `[LOW]` | Minor improvement |
+| Severity | Marker | Bar | Meaning |
+|----------|--------|-----|---------|
+| Critical | 🔴 `[CRITICAL]` | `> 🔴` | Must fix before merge |
+| High | 🟠 `[HIGH]` | `> 🟠` | Should fix before release |
+| Medium | 🟡 `[MEDIUM]` | `> 🟡` | Important improvement |
+| Low | 🟢 `[LOW]` | `> 🟢` | Minor improvement |
 
 ## Example Findings
 
 ### Example 1: Critical + Confirmed + Security
 
 ```text
-### :red_circle: [CRITICAL] SQL injection via unsanitized user input in search endpoint
-
-**Confidence:** Confirmed
-**Location:** `src/api/search.py:42`
-**Category:** Security
+> ### 🔴 [CRITICAL] SQL injection via unsanitized user input in search endpoint
+>
+> **Confidence:** Confirmed  
+> **Location:** `src/api/search.py:42`  
+> **Category:** Security
 
 The search endpoint constructs a SQL query by string concatenation using
 the `query` parameter directly from user input without parameterization.
@@ -524,11 +524,11 @@ cursor.execute("SELECT * FROM items WHERE name LIKE %s", (f"%{query}%",))
 ### Example 2: High + Likely + Correctness
 
 ```text
-### :orange_circle: [HIGH] Off-by-one error in pagination loop skips first result page
-
-**Confidence:** Likely
-**Location:** `src/services/paginator.go:28-35`
-**Category:** Correctness
+> ### 🟠 [HIGH] Off-by-one error in pagination loop skips first result page
+>
+> **Confidence:** Likely  
+> **Location:** `src/services/paginator.go:28-35`  
+> **Category:** Correctness
 
 The pagination loop starts at index 1 instead of 0, causing the first page
 of results to be silently skipped when the API returns zero-indexed pages.
@@ -547,11 +547,11 @@ for i := 0; i < totalPages; i++ {
 ### Example 3: Medium + Potential + Reliability
 
 ```text
-### :yellow_circle: [MEDIUM] Missing timeout on outbound HTTP call may hang indefinitely
-
-**Confidence:** Potential
-**Location:** `src/clients/payment.go:67`
-**Category:** Reliability
+> ### 🟡 [MEDIUM] Missing timeout on outbound HTTP call may hang indefinitely
+>
+> **Confidence:** Potential  
+> **Location:** `src/clients/payment.go:67`  
+> **Category:** Reliability
 
 The payment client creates an HTTP request without a timeout context. If the
 payment gateway becomes unresponsive, the goroutine blocks indefinitely and
@@ -573,11 +573,11 @@ req = req.WithContext(ctx)
 ### Example 4: Low + Confirmed + Maintainability
 
 ```text
-### :green_circle: [LOW] Magic number without named constant reduces readability
-
-**Confidence:** Confirmed
-**Location:** `src/utils/pricing.ts:15`
-**Category:** Maintainability
+> ### 🟢 [LOW] Magic number without named constant reduces readability
+>
+> **Confidence:** Confirmed  
+> **Location:** `src/utils/pricing.ts:15`  
+> **Category:** Maintainability
 
 The discount calculation uses a literal `0.85` with no named constant or comment.
 A future reader cannot tell whether this represents a 15% discount, a tax rate,
@@ -688,7 +688,13 @@ Map risk level (and hard stops) to one decision:
 
 # Final Report
 
-Always finish with a report in this structure (render as normal markdown, not inside a code block):
+Always finish with a report in this structure (render as normal markdown, not inside a code block).
+
+Use visual elements to make the report scannable:
+
+- **Severity chart** — a horizontal bar chart where each bar length is proportional to the finding count.
+- **Risk meter** — a visual gauge from Low to Very High.
+- **Merge decision banner** — a colored blockquote highlighting the decision.
 
 ---
 
@@ -698,17 +704,36 @@ Always finish with a report in this structure (render as normal markdown, not in
 
 **Stacks applied:** (section names from tech-stacks.md, or "none")
 
-**Issues found:**
-- Critical: (number)
-- High: (number)
-- Medium: (number)
-- Low: (number)
+### Severity Chart
 
-**Raw score:** (number from weight table)
+Draw a horizontal bar chart where each bar length is proportional to the count.
+Scale bars relative to the maximum count. Use 1 `█` per unit, up to 40 chars max.
+Skip rows with zero count. Example with Critical=0, High=1, Medium=3, Low=2:
 
-**Risk Level:** Low / Medium / High / Very High
+```
+🔴 Critical
+🟠 High     ████████████████████████████                          1
+🟡 Medium   █████████████████████████████████████████████████████  3
+🟢 Low      ████████████████████████████                          2
+            └─── 1 ───└─── 2 ───└─── 3 ───┘
+```
 
-**Merge Decision:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES | BLOCK MERGE
+When all counts are zero: show a single line `✅ No issues found.`
+
+### Risk Meter
+
+```
+Low          Medium        High       Very High
+[████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  ← (Raw score: N, band: X)
+```
+
+> **Merge Decision:** (COLORED_BADGE) APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES / BLOCK MERGE
+>
+> Use these badges:
+> - ✅ `APPROVE`
+> - ⚠️ `APPROVE WITH COMMENTS`
+> - 🔧 `REQUEST CHANGES`
+> - 🛑 `BLOCK MERGE`
 
 **Final Decision:** Briefly explain why (cite highest findings and score band).
 
