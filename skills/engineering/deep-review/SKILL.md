@@ -96,22 +96,94 @@ False positives to avoid: style/preference, no execution path, uncommon edges wi
 
 Sort: severity → confidence → impact → probability → recovery difficulty.
 
-# Finding Format
+# Output Format
 
-```text
-> ### <MARKER> [SEVERITY] Short title
->
-> **Confidence:** Confirmed | Likely | Potential
-> **Location:** `path/to/file.ext:line`
-> **Category:** Correctness | Reliability | Security | Performance | Architecture | Testing | Regression | Observability | Deployment | Maintainability
+Render as normal markdown (not one giant code fence). Optimize for **narrow CLI** and scanability.
 
-Description (what goes wrong, when).
+Markers: Critical 🔴 · High 🟠 · Medium 🟡 · Low 🟢  
+Decision badges: ✅ APPROVE · ⚠️ APPROVE WITH COMMENTS · 🔧 REQUEST CHANGES · 🛑 BLOCK MERGE
 
-**Evidence:** concrete code behavior.
-**Recommendation:** actionable fix (snippet if helpful).
+## Order
+
+1. **Findings** (if any) — index table when ≥2, then detail blocks  
+2. **Review Summary** — always last machine-scannable block  
+3. **Limitations** / **Questions** — only if non-empty
+
+No findings → skip Findings section; Summary says `✅ No issues found.`
+
+## Finding index (required when ≥2 findings)
+
+```markdown
+## Findings
+
+| # | Sev | Conf | Loc | Title |
+|---|-----|------|-----|-------|
+| 1 | 🔴 C | Confirmed | `a.py:42` | SQL injection in search |
+| 2 | 🟠 H | Likely | `b.go:28` | Off-by-one skips page 0 |
 ```
 
-Markers: Critical 🔴 · High 🟠 · Medium 🟡 · Low 🟢
+Sev abbrev in table only: `C` Critical · `H` High · `M` Medium · `L` Low.  
+One finding → skip the table; still number it `### 1. ...`.
+
+## Finding detail
+
+```markdown
+### 1. 🔴 [CRITICAL] Short title
+
+| | |
+|---|---|
+| **Confidence** | Confirmed |
+| **Category** | Security |
+| **Location** | `path/to/file.ext:line` |
+
+When `query` is attacker-controlled, the handler builds SQL via string concat and executes it.
+
+- **Evidence:** `search.py:42` uses `f"...{query}..."` in `cursor.execute(...)`.
+- **Trigger:** any unauthenticated `GET /search?q=`; likelihood High.
+- **Fix:** parameterized query, e.g. `cursor.execute("... LIKE %s", (f"%{query}%",))`.
+```
+
+Rules:
+- Keep title ≤12 words; put mechanism in body.
+- Evidence must cite `` `path:line` ``.
+- Fix is actionable; snippet ≤8 lines when helpful.
+- Do **not** wrap findings in `>` blockquotes (breaks nest/scan in CLI).
+- Do **not** dump full files or long patches in Fix.
+- Related root cause → one finding, mention sibling locations in Evidence.
+
+## Review Summary (always)
+
+```markdown
+---
+
+## Review Summary
+
+| Field | Value |
+|-------|-------|
+| **Decision** | 🔧 REQUEST CHANGES |
+| **Risk** | High (raw 55; band: High+Confirmed) |
+| **Issues** | 🔴 0 · 🟠 1 · 🟡 2 · 🟢 0 |
+| **Files** | `a.py`, `b.go` (+N more if long) |
+| **Stacks** | Python, Backend — or `none` |
+
+**Why:** one or two sentences citing the highest finding(s) and score rule.
+```
+
+Optional second line under Issues when zero: `✅ No issues found.`
+
+Skip Severity Chart ASCII bars and Risk Meter ASCII gauges — the summary table replaces both.
+
+## Limitations / Questions
+
+```markdown
+## Review Limitations
+- …
+
+## Questions for Author
+- …
+```
+
+Omit a section entirely when empty. No placeholder verbiage.
 
 # Risk Score & Merge
 
@@ -140,40 +212,6 @@ Medium+Potential alone with score < 15 → Low.
 | **REQUEST CHANGES** | High, or any Critical, or High+Confirmed |
 | **APPROVE WITH COMMENTS** | Medium, or only High+Potential / non-blocking Medium |
 | **APPROVE** | Low, no Critical/High |
-
-# Final Report
-
----
-
-## Review Summary
-
-**Files reviewed:** …  
-**Stacks applied:** … (from excerpts or "none")
-
-### Severity Chart
-
-Bars proportional to counts (max 40 `█`). Skip zeros. All zero → `✅ No issues found.`
-
-### Risk Meter
-
-```
-Low          Medium        High       Very High
-[....]  ← (Raw score: N, band: X)
-```
-
-> **Merge Decision:** ✅ APPROVE | ⚠️ APPROVE WITH COMMENTS | 🔧 REQUEST CHANGES | 🛑 BLOCK MERGE
-
-**Final Decision:** one short paragraph (top findings + band rule).
-
-## Review Limitations
-
-Gaps, missing runtime/services/data, unread paths, truncated diff.
-
-## Questions for Author
-
-Only when needed (approach constraints, compatibility, deploy).
-
----
 
 # Incomplete Context
 

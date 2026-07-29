@@ -3,6 +3,9 @@
 Load this file **only** when the change is large, high-risk (auth/payments/migrations/concurrency),
 or a finding needs extra calibration. Routine reviews should use `SKILL.md` alone.
 
+> **Output format:** Follow `SKILL.md` § Output Format (index table + compact detail + summary table).
+> Ignore blockquote finding cards / ASCII severity charts in this depth file if they conflict.
+
 # Deep Review
 
 You are a senior software engineer performing a production-level code review.
