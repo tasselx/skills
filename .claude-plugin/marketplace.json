@@ -3,18 +3,20 @@
   "owner": {
     "name": "tasselx"
   },
-  "description": "Installable agent skills for safe Git auto-commit workflows.",
+  "description": "Installable agent skills for engineering workflows: Git auto-commit and code review.",
   "plugins": [
     {
       "name": "git-auto-commit-skills",
       "source": "./",
-      "description": "Safe local Git auto-commit skills with bilingual Chinese-English commit messages.",
+      "description": "Engineering skills: safe local Git auto-commit with bilingual commit messages, and production-level read-only code review.",
       "category": "engineering",
       "keywords": [
         "git",
         "skills",
         "commit",
-        "auto-commit"
+        "auto-commit",
+        "review",
+        "deep-review"
       ]
     }
   ]

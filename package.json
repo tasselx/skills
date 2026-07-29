@@ -2,7 +2,7 @@
   "name": "git-auto-commit-skills",
   "version": "0.2.0",
   "private": true,
-  "description": "Agent skills for safe local Git auto-commit workflows.",
+  "description": "Agent skills for engineering workflows: safe local Git auto-commit and production-level code review.",
   "repository": {
     "type": "git",
     "url": "https://github.com/tasselx/skills"

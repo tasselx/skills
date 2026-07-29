@@ -1,7 +1,7 @@
 {
   "name": "git-auto-commit-skills",
   "version": "0.2.0",
-  "description": "Agent skills for safe local Git auto-commit workflows with bilingual Chinese-English commit messages.",
+  "description": "Agent skills for engineering workflows: safe local Git auto-commit with bilingual commit messages, and production-level read-only code review.",
   "author": {
     "name": "tasselx"
   },
@@ -12,6 +12,8 @@
     "skills",
     "commit",
     "auto-commit",
+    "review",
+    "deep-review",
     "engineering"
   ],
   "skills": [
