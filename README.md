@@ -183,12 +183,20 @@ $deep-review
 
 ```text
 Use the deep-review skill to review the current uncommitted changes.
+Use the deep-review skill to review only staged changes.
+Use the deep-review skill to review commit abc123.
+Use the deep-review skill to review this branch against main.
+Use the deep-review skill to review specific files.
 ```
 
 中文 prompt：
 
 ```text
 使用 deep-review skill 审查当前未提交的改动。
+使用 deep-review skill 只审查 staged 的改动。
+使用 deep-review skill 审查 commit abc123。
+使用 deep-review skill 审查当前分支相对 main 的差异。
+使用 deep-review skill 审查指定文件。
 ```
 
 ## 技能列表
