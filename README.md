@@ -4,9 +4,9 @@
 
 This is an installable collection of agent-neutral skills for coding agents. More skills may be added over time; the first published skill is `git-auto-commit`.
 
-`git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成简洁的中英双语 commit message，并在安全检查通过后创建本地提交。内置密钥文件检测、合并冲突检测、生成物路径识别，以及 staged/unstaged 分阶段统计。
+`git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成中英文混排的 commit message（中文描述为主，技术术语用英文），并在安全检查通过后创建本地提交。内置密钥文件检测、合并冲突检测、生成物路径识别，以及 staged/unstaged 分阶段统计。
 
-`git-auto-commit` analyzes real Git changes, learns recent commit style, generates concise Chinese-English commit messages, and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
+`git-auto-commit` analyzes real Git changes, learns recent commit style, generates mixed Chinese-English commit messages (Chinese description with English technical terms), and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
 
 本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 

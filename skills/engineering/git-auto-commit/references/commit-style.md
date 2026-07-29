@@ -33,12 +33,12 @@ Use no scope only when the repository commonly omits scopes.
 
 ## Subject
 
-Use Chinese first, followed by short English technical keywords:
+Use mixed Chinese-English naturally: Chinese for the description, English for technical terms, API names, and keywords. No need for a separate English translation.
 
 ```text
-feat(payment): 增加订阅支付流程 Subscription Payment Flow
-fix(auth): 修复 Token 过期问题 Token Expiration Fix
-refactor(network): 重构请求层结构 Network Layer Refactor
+feat(payment): 增加 Stripe 订阅支付流程
+fix(auth): 修复 Token 过期导致 401 问题
+refactor(network): 重构 HTTP interceptor 层
 ```
 
 Keep the subject concise, searchable, and without a trailing period.
@@ -61,13 +61,13 @@ Use short bullets in the body; do not narrate routine file lists.
 Simple change (subject only, no body):
 
 ```text
-fix(auth): 修复 Token 过期问题 Token Expiration Fix
+fix(auth): 修复 Token 过期导致 401 问题
 ```
 
 Breaking change with body:
 
 ```text
-feat(api)!: 重构用户认证接口 Refactor Auth API
+feat(api)!: 重构用户认证接口
 
 BREAKING CHANGE: 移除 /v1/auth/legacy 端点，统一使用 /v2/auth/oauth
 - 移除 LegacyAuthProvider 类
@@ -78,7 +78,7 @@ BREAKING CHANGE: 移除 /v1/auth/legacy 端点，统一使用 /v2/auth/oauth
 Multi-module change with body:
 
 ```text
-feat(payment): 增加订阅支付流程 Subscription Payment Flow
+feat(payment): 增加 Stripe 订阅支付流程
 
 - 新增 SubscriptionPlan 模型与数据库迁移
 - 接入 Stripe 支付网关

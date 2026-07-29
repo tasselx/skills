@@ -62,15 +62,17 @@ Read `$SKILL_DIR/references/commit-style.md` when the repository has no obvious 
 Default format:
 
 ```text
-type(scope): 中文描述 English Keyword
+type(scope): 中英文混排描述
 ```
+
+Write the subject in natural mixed Chinese-English: Chinese for the description, English for technical terms, API names, and keywords. No need for a separate English translation.
 
 Examples:
 
 ```text
-feat(auth): 增加 OAuth 登录支持 OAuth Login Support
-fix(player): 修复视频加载失败 Video Playback Fix
-refactor(network): 重构请求层结构 Network Layer Refactor
+feat(auth): 增加 OAuth2 登录支持
+fix(player): 修复 video 播放时序竞态问题
+refactor(network): 重构 HTTP interceptor 层
 ```
 
 Use a body only for complex behavior, migrations, breaking changes, or multi-module changes. Keep simple commits to a single subject line.

@@ -16,4 +16,6 @@ Rules:
 - Do not add `Co-Authored-By`, `Generated-By`, or other AI attribution trailers unless the user explicitly asks for them.
 
 Default commit format:
-`type(scope): 中文描述 English Keyword`
+`type(scope): 中英文混排描述`
+
+Use mixed Chinese-English naturally: Chinese for description, English for technical terms. No need for a separate English translation.
