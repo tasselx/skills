@@ -1,12 +1,16 @@
 # Tassel Agent Skills
 
-面向 Coding Agent 的可安装 skills 集合。这个仓库后续可能会继续增加更多 skills；当前已发布的第一个技能是 `git-auto-commit`。
+面向 Coding Agent 的可安装 skills 集合。这个仓库后续可能会继续增加更多 skills；当前已发布两个技能：`git-auto-commit` 和 `deep-review`。
 
-This is an installable collection of agent-neutral skills for coding agents. More skills may be added over time; the first published skill is `git-auto-commit`.
+This is an installable collection of agent-neutral skills for coding agents. More skills may be added over time; the currently published skills are `git-auto-commit` and `deep-review`.
 
 `git-auto-commit` 会读取真实 Git diff，学习当前仓库最近的提交风格，生成中英文混排的 commit message（中文描述为主，技术术语用英文），并在安全检查通过后创建本地提交。内置密钥文件检测、合并冲突检测、生成物路径识别，以及 staged/unstaged 分阶段统计。
 
 `git-auto-commit` analyzes real Git changes, learns recent commit style, generates mixed Chinese-English commit messages (Chinese description with English technical terms), and creates safe local commits. It includes built-in detection for secret-like files, merge conflicts, generated paths, and separate staged/unstaged line counts.
+
+`deep-review` 对指定代码变更执行只读的 defect-first 深度审查。它收集 diff 上下文（未提交改动、staged 改动、指定 commit、或分支差异），然后覆盖正确性、安全、性能、API 设计、错误处理、测试覆盖和可维护性七大类别，返回按严重级别排序的所有可执行发现。内置密钥检测、冲突检测、语言识别和大 diff 预警。
+
+`deep-review` performs a read-only, defect-first code review of a specified code change. It collects diff context (uncommitted changes, staged changes, a specific commit, or a branch diff), then reviews across seven categories: correctness, security, performance, API design, error handling, test coverage, and maintainability. It returns every actionable finding sorted by severity. Built-in detection for secrets, conflicts, language identification, and large diff warnings.
 
 本仓库正式技能放在 `skills/` 目录，Claude Code plugin 元数据放在 `.claude-plugin/`，并可被 Agent Skills installer 识别。
 
@@ -22,7 +26,7 @@ This repo follows the layout: promoted skills live under `skills/`, Claude Code 
 - Claude Code，可通过 `~/.claude/skills` 显示在 Skills 面板，也可通过 `.claude-plugin/` 作为 plugin 安装。
 - Codex，可通过 `~/.codex/skills` 安装。
 
-不同 Agent 对 slash command、插件 marketplace、自动发现路径的支持不一样，所以 `/git-auto-commit` 这类命令需要由对应客户端或插件系统映射。技能本体的通用入口是 `SKILL.md`，不是某个特定客户端的私有命令格式。
+不同 Agent 对 slash command、插件 marketplace、自动发现路径的支持不一样，所以 `/git-auto-commit`、`/deep-review` 这类命令需要由对应客户端或插件系统映射。技能本体的通用入口是 `SKILL.md`，不是某个特定客户端的私有命令格式。
 
 This skill is not guaranteed to support every proprietary agent plugin system on the market. It is designed around portable Agent Skills conventions: a `SKILL.md` entrypoint, bundled resources, optional slash-command prompt text, and installable metadata for common harnesses.
 
@@ -34,12 +38,24 @@ This skill is not guaranteed to support every proprietary agent plugin system on
 npx skills@latest add tasselx/skills
 ```
 
-安装时选择你需要的 skill，以及你想安装到的 agent。当前仓库只有一个 skill：`git-auto-commit`。
+安装时选择你需要的 skill，以及你想安装到的 agent。当前仓库有两个 skill：`git-auto-commit` 和 `deep-review`。
 
-只安装当前的 `git-auto-commit`，并安装到所有支持的 agent：
+只安装 `git-auto-commit`，并安装到所有支持的 agent：
 
 ```bash
 npx skills@latest add tasselx/skills --skill git-auto-commit --agent '*'
+```
+
+只安装 `deep-review`，并安装到所有支持的 agent：
+
+```bash
+npx skills@latest add tasselx/skills --skill deep-review --agent '*'
+```
+
+安装全部 skill：
+
+```bash
+npx skills@latest add tasselx/skills --agent '*'
 ```
 
 注意：`skills@latest` 当前会把通用 skill 安装到 `~/.agents/skills` 等 Agent Skills 目录；Claude Code 的 Skills 面板提示它扫描的是 `.claude/skills/` 或 `~/.claude/skills/`。如果你要让 Claude Code 的 Skills 面板显示这个技能，请看下面的 Claude Code Skills 安装。
@@ -48,11 +64,12 @@ npx skills@latest add tasselx/skills --skill git-auto-commit --agent '*'
 
 ## Claude Code Skills 面板安装
 
-让 Claude Code 的 Skills 面板显示 `git-auto-commit`：
+让 Claude Code 的 Skills 面板显示 `git-auto-commit` 和 `deep-review`：
 
 ```bash
 mkdir -p ~/.claude/skills
 cp -R skills/engineering/git-auto-commit ~/.claude/skills/
+cp -R skills/engineering/deep-review ~/.claude/skills/
 ```
 
 然后重启 Claude Code，或重新打开 Skills 面板。
@@ -62,6 +79,7 @@ cp -R skills/engineering/git-auto-commit ~/.claude/skills/
 ```bash
 mkdir -p .claude/skills
 cp -R skills/engineering/git-auto-commit .claude/skills/
+cp -R skills/engineering/deep-review .claude/skills/
 ```
 
 ## Claude Code Plugin 安装
@@ -87,6 +105,7 @@ Codex：
 ```bash
 mkdir -p ~/.codex/skills
 cp -R skills/engineering/git-auto-commit ~/.codex/skills/
+cp -R skills/engineering/deep-review ~/.codex/skills/
 ```
 
 通用 agent skills 目录：
@@ -94,6 +113,7 @@ cp -R skills/engineering/git-auto-commit ~/.codex/skills/
 ```bash
 mkdir -p ~/.agents/skills
 cp -R skills/engineering/git-auto-commit ~/.agents/skills/
+cp -R skills/engineering/deep-review ~/.agents/skills/
 ```
 
 Claude 风格技能目录：
@@ -101,6 +121,7 @@ Claude 风格技能目录：
 ```bash
 mkdir -p ~/.claude/skills
 cp -R skills/engineering/git-auto-commit ~/.claude/skills/
+cp -R skills/engineering/deep-review ~/.claude/skills/
 ```
 
 本机已经同步安装到：
@@ -108,9 +129,13 @@ cp -R skills/engineering/git-auto-commit ~/.claude/skills/
 ```text
 ~/.codex/skills/git-auto-commit
 ~/.claude/skills/git-auto-commit
+~/.codex/skills/deep-review
+~/.claude/skills/deep-review
 ```
 
 ## 使用方式
+
+### git-auto-commit
 
 Codex：
 
@@ -140,15 +165,48 @@ Use the git-auto-commit skill to commit and then push.
 使用 git-auto-commit skill 提交当前改动，然后 push。
 ```
 
+### deep-review
+
+Codex：
+
+```text
+$deep-review
+```
+
+支持 slash command 的 agent：
+
+```text
+/deep-review
+```
+
+通用 prompt：
+
+```text
+Use the deep-review skill to review the current uncommitted changes.
+Use the deep-review skill to review commit abc123.
+Use the deep-review skill to review this branch against main.
+Use the deep-review skill to review only staged changes.
+```
+
+中文 prompt：
+
+```text
+使用 deep-review skill 审查当前未提交的改动。
+使用 deep-review skill 审查 commit abc123。
+使用 deep-review skill 审查当前分支相对 main 的差异。
+使用 deep-review skill 只审查 staged 的改动。
+```
+
 ## 技能列表
 
-当前仓库只有一个 skill。后续新增 skill 时，会继续按分类放在 `skills/<category>/<skill-name>/` 下，并在这里列出。
+当前仓库有以下 skill。后续新增 skill 时，会继续按分类放在 `skills/<category>/<skill-name>/` 下，并在这里列出。
 
 ### Engineering
 
 User-invoked:
 
 - [`git-auto-commit`](./skills/engineering/git-auto-commit/SKILL.md) — 分析当前 Git 改动并创建安全的中英双语本地提交。
+- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 对指定代码变更执行只读的 defect-first 深度审查，覆盖正确性、安全、性能、API 设计、错误处理、测试覆盖和可维护性，返回所有可执行的发现。
 
 ## 项目结构
 
@@ -161,14 +219,21 @@ User-invoked:
 ├── skills/
 │   └── engineering/
 │       ├── README.md
-│       └── git-auto-commit/
+│       ├── git-auto-commit/
+│       │   ├── SKILL.md
+│       │   ├── agents/openai.yaml
+│       │   ├── commands/git-auto-commit.md
+│       │   ├── references/commit-style.md
+│       │   └── scripts/
+│       │       ├── git_commit_snapshot.py
+│       │       └── test_git_commit_snapshot.py
+│       └── deep-review/
 │           ├── SKILL.md
 │           ├── agents/openai.yaml
-│           ├── commands/git-auto-commit.md
-│           ├── references/commit-style.md
+│           ├── commands/deep-review.md
+│           ├── references/review-checklist.md
 │           └── scripts/
-│               ├── git_commit_snapshot.py
-│               └── test_git_commit_snapshot.py
+│               └── collect_review_context.py
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── package.json
@@ -187,8 +252,16 @@ skills/
 
 ## 安全行为
 
+### git-auto-commit
+
 这个技能只创建本地 commit。遇到疑似密钥文件、未解决的合并冲突、大 diff、意图不清晰、破坏性改动、公共 API 变更、迁移、或混杂的无关改动时，会先停下来请求确认。快照脚本会自动检测密钥类路径、冲突状态、生成物/缓存目录，并分别统计 staged 和 unstaged 改动行数。除非用户明确要求 push，否则永远不会自动 push。
 
 默认不会添加 `Co-Authored-By: Claude <noreply@anthropic.com>` 或其他 AI attribution trailer，除非用户明确要求。
 
 The skill creates local commits only. It stops for confirmation when it detects secret-like paths, unresolved merge conflicts, huge diffs, unclear intent, destructive changes, public API breaks, migrations, or mixed unrelated changes. The snapshot script automatically detects secret-like paths, conflict status, generated/cache directories, and reports separate staged/unstaged line counts. It never pushes unless the user explicitly asks for push.
+
+### deep-review
+
+这个技能是纯只读的：永远不会修改代码、staging、commit 或 push。审查脚本 `collect_review_context.py` 只执行 `git diff`、`git status`、`git log` 等只读命令，不会写入或修改任何文件。审查结果按严重级别（CRITICAL > WARNING > SUGGESTION > PRAISE）排序，每条发现都包含具体文件路径、行号、类别描述和可执行的修复建议。不确定的发现会被降级或省略，以避免误报。
+
+This skill is strictly read-only: it never modifies code, stages files, commits, or pushes. The review script `collect_review_context.py` only runs read-only Git commands (`git diff`, `git status`, `git log`). Findings are sorted by severity (CRITICAL > WARNING > SUGGESTION > PRAISE), each with a specific file path, line number, category, description, and actionable fix suggestion. Uncertain findings are downgraded or omitted to avoid false positives.

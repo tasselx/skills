@@ -15,6 +15,7 @@
     "engineering"
   ],
   "skills": [
-    "./skills/engineering/git-auto-commit"
+    "./skills/engineering/git-auto-commit",
+    "./skills/engineering/deep-review"
   ]
 }
