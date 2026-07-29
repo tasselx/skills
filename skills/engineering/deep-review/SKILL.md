@@ -20,11 +20,31 @@ Senior production review. Goal: decide if the change is safe to ship — not to 
 
 **Tone:** neutral and factual (“When X, Y may happen”). No condescension, no filler.
 
-**Language:** honor user request; else Chinese if locale is `zh_*`, otherwise English. Keep severity/confidence/category tokens and code/paths/commands in English.
+# Output Language
+
+Adapt the review output language to the environment:
+
+1. **User override** — If the user explicitly specifies a language (e.g. "用中文审查", "review in English"), honor that choice.
+2. **System locale is Chinese** — If the system locale is a Chinese variant (`zh_CN`, `zh_TW`, `zh_HK`, `zh_MO`, `zh_SG`, or any `zh_*`), output in **Chinese**.
+3. **Otherwise** — output entirely in **English**.
+
+Detect locale from the environment (e.g. `LANG`, `LC_ALL`, `LC_MESSAGES`). Prefer the first available value; match case-insensitively on a `zh` prefix (including `zh_CN.UTF-8`).
+
+When outputting in **Chinese**:
+- Finding titles, descriptions, Evidence/Trigger/Fix prose, Review Summary **Why**, Limitations, and Questions for Author → Chinese.
+- Code identifiers, file paths, git commands, and technical tokens stay in English as-is.
+- Machine-parseable labels stay in English: severity (`CRITICAL` / `HIGH` / …), confidence (`Confirmed` / `Likely` / `Potential`), category (`Security` / …), merge decision (`APPROVE` / `REQUEST CHANGES` / …), and table field keys (`Decision`, `Risk`, `Issues`, `Files`, `Stacks`).
+
+When outputting in **English**:
+- Everything in English, including findings, summary Why, limitations, and questions.
+
+Kickoff / progress lines follow the same language choice. Do not mix Chinese and English prose in the same review (except the English tokens listed above).
 
 # Fast Workflow (do not invent extra steps)
 
 Minimize tool rounds. Default path is **≤3 tool batches**.
+
+**Progressive output (required):** stream findings as you confirm them. Do **not** buffer every issue until the end.
 
 ## 1. Snapshot (required first)
 
@@ -59,19 +79,32 @@ If `has_changes` is false → print `empty_hint` and ask for target. Stop.
 
 Never reload this `SKILL.md`. Load `references/review-depth.md` only for large/high-risk changes or calibration disputes.
 
-## 3. Single-pass analysis
+After this batch: print a one-line kickoff only, e.g.  
+`Reviewing N files (mode=…, stacks=…). Streaming findings…`
 
-Work from intent → impact → defects in **one mental pass** (not nine serial tool loops).
+Do **not** print the final Summary yet.
 
-1. **Intent** — goal, approach, expected vs actual behavior; classify via `change_types` (+ commit subject if any).
-2. **Impact** — callers, contracts, data/state flow; monorepo → `package_roots`; mixed → group findings.
-3. **Defect scan** (use only categories that fit; drop N/A silently):
-   - Correctness, Reliability, Security, Performance
-   - Architecture (only if risk/debt is real), Testing, Regression
-   - Observability, Deployment safety
-   - Stack excerpts + bug patterns: state, async, errors, data, resources, trust boundaries
-4. **Gate each finding** — exact location, realistic trigger path, production relevance. Deduplicate by root cause. Drop weak/speculative items.
-5. **Score + report** — weights below → risk band → merge decision → final summary.
+## 3. Analyze and emit (stream)
+
+Work intent → impact → defects. Prefer high-risk paths first (security, migrations, production).
+
+**Emit rule:** once a finding passes the gate (location + trigger + evidence + not a dupe), **immediately print its full detail block** in the user-visible reply. Then continue scanning.
+
+1. **Intent** — goal, approach, expected vs actual; use `change_types` (+ commit subject).
+2. **Impact** — callers/contracts/data flow as needed; monorepo → `package_roots`; mixed → note group in the finding body.
+3. **Defect scan** (only fitting categories): correctness, reliability, security, performance, architecture (if real risk), testing, regression, observability, deployment; plus stack excerpts and bug patterns (state/async/errors/data/resources/trust).
+4. **Gate → print** — each confirmed finding gets the next monotonic `#` and is written out **before** more tool calls when possible. Drop weak/speculative items silently (do not announce drops).
+5. **Close out** — after the scan (or when large-diff batch ends), print index table (if ≥2), then Review Summary, then Limitations/Questions if any.
+
+Between findings: optional one short status line is OK (`…still checking auth callers`). No long preambles, no “full report coming next”.
+
+If a later finding supersedes an earlier one (same root cause): print a one-line correction  
+`~~#N~~ superseded by #M (same root cause)`  
+and only count `#M` in the Summary score.
+
+## 4. Tool interleaving
+
+You **may** emit text findings and then call more tools (read callers, etc.). Never hold back a full Finding Detail until the entire review is done. Summary tables are the only block that must wait until the end.
 
 # Scope Cheatsheet
 
@@ -103,18 +136,28 @@ Render as normal markdown (not one giant code fence). Optimize for **narrow CLI*
 Markers: Critical 🔴 · High 🟠 · Medium 🟡 · Low 🟢  
 Decision badges: ✅ APPROVE · ⚠️ APPROVE WITH COMMENTS · 🔧 REQUEST CHANGES · 🛑 BLOCK MERGE
 
-## Order
+## Order (streaming)
 
-1. **Findings** (if any) — index table when ≥2, then detail blocks  
-2. **Review Summary** — always last machine-scannable block  
-3. **Limitations** / **Questions** — only if non-empty
+**While reviewing (live):**
+1. One-line kickoff after snapshot/evidence load.
+2. Each finding **detail block as soon as it is confirmed** (numbered `#1`, `#2`, …). Prefer emitting Critical/High before Low when several are ready.
+3. Optional short progress lines between batches.
 
-No findings → skip Findings section; Summary says `✅ No issues found.`
+**At the end only:**
+4. **Finding index table** if total findings ≥ 2 (rebuild from emitted items; severity sort for the table is OK even if emit order differed).
+5. **Review Summary** (Decision / Risk / Issues / Files / Stacks / Why).
+6. **Limitations** / **Questions for Author** if non-empty.
 
-## Finding index (required when ≥2 findings)
+No findings → no detail blocks; end with Summary `✅ No issues found.`
+
+Do **not** wait to print details until the Summary is ready. The index table and Summary are the closing section, not the first place findings appear.
+
+## Finding index (end, when ≥2 findings)
+
+Print **after** all detail blocks, immediately before Review Summary:
 
 ```markdown
-## Findings
+## Findings index
 
 | # | Sev | Conf | Loc | Title |
 |---|-----|------|-----|-------|
@@ -123,7 +166,8 @@ No findings → skip Findings section; Summary says `✅ No issues found.`
 ```
 
 Sev abbrev in table only: `C` Critical · `H` High · `M` Medium · `L` Low.  
-One finding → skip the table; still number it `### 1. ...`.
+Sort rows by severity → confidence (user scan), even if live emit order was discovery order.  
+One finding → skip the index table.
 
 ## Finding detail
 

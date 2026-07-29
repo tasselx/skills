@@ -16,10 +16,11 @@ Required steps:
 4. **Do not** re-run `git status`. Prefer `diff_patch` and `stack_excerpts` from the snapshot.
 5. If `stack_excerpts_complete` is false and stacks were detected, read only missing headings from `references/tech-stacks.md`.
 6. Parallel-read `full_file_read_paths`; patch may suffice for `patch_likely_enough_paths`.
-7. Single-pass review per `SKILL.md` → findings (index table if ≥2) → compact detail → summary table → limitations/questions only if needed.
+7. Stream findings: print each confirmed finding detail immediately (do not buffer until the end). Prefer security/high-risk paths first.
+8. Close with: Findings index (if ≥2) → Review Summary table → Limitations/Questions only if needed.
 
 Hard rules:
 - Read-only: never modify, stage, commit, push, rewrite, patch, or auto-fix.
 - No style-only nits; no padded findings; evidence + trigger path required.
 - Severity × confidence weights from `SKILL.md` (Medium+Confirmed ≠ Medium+Potential).
-- Language: `SKILL.md` Output Language rules.
+- Language: follow `SKILL.md` **Output Language** — user override, else Chinese when system locale is `zh_*`, else English.
