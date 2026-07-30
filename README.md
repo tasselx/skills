@@ -208,7 +208,7 @@ Use the deep-review skill to review specific files.
 User-invoked:
 
 - [`git-auto-commit`](./skills/engineering/git-auto-commit/SKILL.md) — 分析当前 Git 改动并创建安全的中英双语本地提交。
-- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 生产级只读审查：snapshot 脚本 + tech-stack 清单 + severity×confidence 量化风险分与合并建议。
+- [`deep-review`](./skills/engineering/deep-review/SKILL.md) — 生产级只读审查：直接 git diff + severity×confidence 量化风险分与合并建议。无脚本依赖。
 
 ## 项目结构
 
@@ -233,10 +233,9 @@ User-invoked:
 │           ├── SKILL.md
 │           ├── agents/openai.yaml
 │           ├── commands/deep-review.md
-│           ├── references/tech-stacks.md
-│           └── scripts/
-│               ├── review_snapshot.py
-│               └── test_review_snapshot.py
+│           └── references/
+│               ├── review-depth.md
+│               └── tech-stacks.md
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── package.json

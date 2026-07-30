@@ -1,38 +1,43 @@
-# /deep-review — HARD ENTRY
+# /deep-review — Read-Only Code Review
 
-**Tool budget = 1.** Then write the full review. No exploration.
+**One git diff command. Then write the full review. No exploration.**
 
-## Exactly one command
+## Step 1 — Capture the diff
 
 ```bash
-python3 "${HOME}/.agents/skills/deep-review/scripts/review_snapshot.py" --compact
-# or repo path:
-# python3 skills/engineering/deep-review/scripts/review_snapshot.py --compact
+# Uncommitted changes (default)
+git diff HEAD
+
+# Staged only
+git diff --cached
+
+# Specific commit
+git show <sha>
+
+# Branch diff against base
+git diff <base>...HEAD
 ```
 
-Other modes (still **one** call):  
-`--mode staged` | `--mode commit --commit HEAD` | `--mode branch-diff --base main` | `--mode file --file p`  
-`--profile deep` only when user wants slow/thorough.
+Also get recent context:
 
-## Then stop tools
+```bash
+git log --oneline -10
+```
 
-From the JSON, write the review:
+## Step 2 — Write the review immediately
 
-- Language = `output_language` / `output_language_rule` (zh → 中文正文). Never use shell `LANG` alone.
-- Evidence = `diff_patch` + `file_contents.files` + `stack_excerpts`
-- If `agent_hints.max_tool_batches_after_snapshot == 0` → **zero** further tools (default)
+No further tool calls. Focus: correctness → reliability → security → regression.
+Real defects only. Evidence + trigger on every finding.
+See `SKILL.md` for finding format and risk weights.
 
-## Output
+## Deep mode
 
-Findings (if any) → index if ≥2 → Review Summary table → Limitations/Questions only if needed.  
-See skill `SKILL.md` for finding format and risk weights.
+Only when user asks for deep/thorough review, or change is large/high-risk.
+May open `references/review-depth.md` and `references/tech-stacks.md`.
+Max 3 additional tool batches.
 
-## Forbidden after snapshot
+## Forbidden
 
-`Read` / `Grep` / `Glob` / `Task` / second `Bash` / reloading skill files / opening `review-depth.md`.
-
-## Hard rules
-
-- Read-only  
-- Real defects only  
-- Evidence + trigger on every finding  
+- `Read` / `Grep` / `Glob` / `Task` / second `Bash` (in instant mode)
+- Modifying code, committing, pushing
+- Long preambles

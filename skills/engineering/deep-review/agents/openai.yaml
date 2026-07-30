@@ -1,8 +1,8 @@
 interface:
   display_name: "Deep Review"
-  short_description: "Fast read-only git diff review (one snapshot + oneshot report)"
-  long_description: "Runs one local review_snapshot.py call that embeds the diff and small file contents, then writes production-focused findings with severity/confidence and a merge decision. Default profile is oneshot (no repo exploration). Use --profile deep only for large/security-sensitive changes."
-  default_prompt: "Use $deep-review. Run exactly one snapshot script call, then write the full review immediately with zero further tools. Obey output_language from the snapshot."
+  short_description: "Fast read-only git diff review (no script dependency)"
+  long_description: "Runs git diff directly, then writes production-focused findings with severity/confidence and a merge decision. Default mode is instant (one diff command + one review). Use deep mode only for large/security-sensitive changes."
+  default_prompt: "Use $deep-review. Run one git diff command, then write the full review immediately with zero further tools."
   capabilities:
     - production-level-review
     - defect-detection
@@ -10,7 +10,6 @@ interface:
     - severity-and-confidence-classification
     - quantified-risk-scoring
     - merge-decision
-    - diff-snapshot
   modes:
     - uncommitted
     - staged
