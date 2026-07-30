@@ -25,8 +25,9 @@ This repo follows the layout: promoted skills live under `skills/`, Claude Code 
 - 能读取本地 Markdown 指令并执行 shell/Git 命令的 coding agent。
 - Claude Code，可通过 `~/.claude/skills` 显示在 Skills 面板，也可通过 `.claude-plugin/` 作为 plugin 安装。
 - Codex，可通过 `~/.codex/skills` 安装。
+- OpenCode，可通过 `./scripts/install-opencode.sh` 同时安装 skills（`/skills`）与 slash commands（`/git-auto-commit` 等）；定义在 `opencode/command/`。
 
-不同 Agent 对 slash command、插件 marketplace、自动发现路径的支持不一样，所以 `/git-auto-commit`、`/deep-review` 这类命令需要由对应客户端或插件系统映射。技能本体的通用入口是 `SKILL.md`，不是某个特定客户端的私有命令格式。
+不同 Agent 对 slash command、插件 marketplace、自动发现路径的支持不一样。技能本体的通用入口是 `SKILL.md`；OpenCode 的斜杠命令是额外的 `opencode/command/<name>.md` 映射。
 
 This skill is not guaranteed to support every proprietary agent plugin system on the market. It is designed around portable Agent Skills conventions: a `SKILL.md` entrypoint, bundled resources, optional slash-command prompt text, and installable metadata for common harnesses.
 
@@ -98,6 +99,35 @@ claude plugin marketplace add tasselx/skills
 claude plugin install git-auto-commit-skills@tasselx
 ```
 
+## OpenCode 安装（Skills + 斜杠命令）
+
+OpenCode 里 **skill**（`/skills`）和 **command**（`/git-auto-commit` 等）是两套加载路径。本仓库用 `opencode/command/` + 安装脚本一次装齐。
+
+```bash
+# 从本仓库根目录执行（默认 symlink，改 skill 即时生效）
+./scripts/install-opencode.sh
+
+# 或复制文件而不是软链
+./scripts/install-opencode.sh copy
+```
+
+会安装到：
+
+```text
+~/.config/opencode/skill/<name>/          # OpenCode skills
+~/.config/opencode/command/<name>.md      # OpenCode slash commands
+~/.agents/skills/<name>/                  # 通用 / OpenCode 外部 skill 扫描
+```
+
+装完后 **退出并重启 OpenCode**，命令面板应出现：
+
+```text
+/git-auto-commit
+/deep-review
+```
+
+新增 skill 时：补 `skills/<bucket>/<name>/` + `opencode/command/<name>.md`，再跑一遍安装脚本。
+
 ## 手动安装
 
 Codex：
@@ -131,6 +161,10 @@ cp -R skills/engineering/deep-review ~/.claude/skills/
 ~/.claude/skills/git-auto-commit
 ~/.codex/skills/deep-review
 ~/.claude/skills/deep-review
+~/.config/opencode/skill/git-auto-commit
+~/.config/opencode/skill/deep-review
+~/.config/opencode/command/git-auto-commit.md
+~/.config/opencode/command/deep-review.md
 ```
 
 ## 使用方式
@@ -143,7 +177,7 @@ Codex：
 $git-auto-commit
 ```
 
-支持 slash command 的 agent：
+支持 slash command 的 agent（含 OpenCode，需先 `./scripts/install-opencode.sh`）：
 
 ```text
 /git-auto-commit
@@ -173,7 +207,7 @@ Codex：
 $deep-review
 ```
 
-支持 slash command 的 agent：
+支持 slash command 的 agent（含 OpenCode，需先 `./scripts/install-opencode.sh`）：
 
 ```text
 /deep-review
@@ -218,6 +252,12 @@ User-invoked:
 │   ├── marketplace.json
 │   └── plugin.json
 ├── .gitignore
+├── opencode/
+│   └── command/                 # OpenCode slash commands
+│       ├── git-auto-commit.md
+│       └── deep-review.md
+├── scripts/
+│   └── install-opencode.sh      # 安装 skills + commands 到 OpenCode
 ├── skills/
 │   └── engineering/
 │       ├── README.md
