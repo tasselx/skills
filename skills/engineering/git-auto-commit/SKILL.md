@@ -1,11 +1,11 @@
 ---
 name: git-auto-commit
-description: Analyze real Git working-tree changes, learn the repository's commit style, generate concise bilingual Chinese-English commit messages, and create safe local commits. Use when the user asks an agent to commit, auto commit, save changes to git, create a commit, generate a commit message, run a dry commit review, or explicitly invokes git-auto-commit.
+description: Analyze real Git working-tree changes, learn the repository's commit style, generate detailed bilingual Chinese-English conventional commit messages with a body, and create safe local commits. Use when the user asks an agent to commit, auto commit, save changes to git, create a commit, generate a commit message, run a dry commit review, or explicitly invokes git-auto-commit.
 ---
 
 # Git Auto Commit
 
-Create a local Git commit only after inspecting the actual diff, repository history, and safety risks. Prefer the repository's existing commit style; when it is unclear, use concise bilingual Chinese-English conventional commits.
+Create a local Git commit only after inspecting the actual diff, repository history, and safety risks. Prefer the repository's existing commit style; when it is unclear, use detailed bilingual Chinese-English conventional commits with a subject plus body.
 
 This skill is agent-neutral. Use it from Codex, Claude Code, Cursor, OpenCode, Gemini CLI, or any other coding agent that can read this `SKILL.md` file and run local shell commands.
 
@@ -57,17 +57,21 @@ Ignore dependency folders, generated build output, caches, and binary artifacts 
 
 ## Message Rules
 
-Read `$SKILL_DIR/references/commit-style.md` when the repository has no obvious style or when choosing the type/scope is non-trivial.
+Always read `$SKILL_DIR/references/commit-style.md` before writing the message. Prefer a **detailed** message: subject + body bullets that capture what changed and why, grounded in the real diff.
 
 Default format:
 
 ```text
 type(scope): 中英文混排描述
+
+- 关键改动点 1（含关键符号/API 名）
+- 关键改动点 2
+- 行为影响或边界情况（如有）
 ```
 
 Write the subject in natural mixed Chinese-English: Chinese for the description, English for technical terms, API names, and keywords. No need for a separate English translation.
 
-Examples:
+Subject examples:
 
 ```text
 feat(auth): 增加 OAuth2 登录支持
@@ -75,7 +79,14 @@ fix(player): 修复 video 播放时序竞态问题
 refactor(network): 重构 HTTP interceptor 层
 ```
 
-Use a body only for complex behavior, migrations, breaking changes, or multi-module changes. Keep simple commits to a single subject line.
+Body requirements (default — detailed):
+
+- **Default: always include a body** with 2–8 short bullets summarizing the real diff.
+- Cover: new/changed APIs or methods, behavior changes, refactors of key logic, important constraints or edge cases.
+- Prefer concrete names from the diff (`onPanUpdate`, `multiType=3`, `FishUtil.isBossFishLevel`) over vague wording.
+- Group related bullets; do not dump every touched filename.
+- Only use subject-only for trivial one-liners (typo, comment-only, pure formatting, single-line config tweak) when the subject already says everything.
+- Breaking changes: lead body with `BREAKING CHANGE: ...` then bullets.
 
 Do not add AI attribution trailers such as:
 

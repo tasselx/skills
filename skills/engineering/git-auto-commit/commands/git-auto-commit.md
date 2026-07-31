@@ -1,7 +1,7 @@
 Use the `git-auto-commit` skill from this repository or installed skills directory.
 
 Task:
-Analyze the current Git repository's real working-tree changes, learn recent commit style, generate a concise bilingual Chinese-English commit message, and create a safe local commit.
+Analyze the current Git repository's real working-tree changes, learn recent commit style, generate a **detailed** bilingual Chinese-English conventional commit message (subject + body bullets), and create a safe local commit.
 
 Rules:
 - Locate the skill directory and set `SKILL_DIR` to it when running bundled resources.
@@ -15,7 +15,18 @@ Rules:
 - For dry-run requests, do not stage or commit; only return the proposed message and reasoning.
 - Do not add `Co-Authored-By`, `Generated-By`, or other AI attribution trailers unless the user explicitly asks for them.
 
-Default commit format:
-`type(scope): 中英文混排描述`
+Default commit format (detailed):
 
-Use mixed Chinese-English naturally: Chinese for description, English for technical terms. No need for a separate English translation.
+```text
+type(scope): 中英文混排描述
+
+- 关键改动点（含方法/API/参数名）
+- 行为影响或边界情况
+```
+
+Rules for the message:
+- Always read `$SKILL_DIR/references/commit-style.md`.
+- Prefer subject + 2–8 body bullets grounded in the real diff for every non-trivial change.
+- Subject-only only for trivial one-liners (typo, comment-only, pure formatting).
+- Use mixed Chinese-English naturally: Chinese for description, English for technical terms. No separate English translation.
+- Do not dump every filename; summarize behavior and key symbols.
